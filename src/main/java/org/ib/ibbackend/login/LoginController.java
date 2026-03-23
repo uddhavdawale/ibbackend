@@ -5,7 +5,7 @@ import org.ib.ibbackend.dto.LoginStatus;
 import org.springframework.web.bind.annotation.*;
 
 @RestController()
-@CrossOrigin(origins = {  "http://localhost:5173","http://ibbackend:8080/api/" })
+@CrossOrigin(origins = {  "http://localhost:5173","http://ibbackend:8080/api/" , "http://localhost:4173","https://ibfrontendlive.vercel.app/"})
 public class LoginController {
     @PostMapping(path = "/login")
     public LoginStatus login(@RequestBody() LoginModel loginModel) {
