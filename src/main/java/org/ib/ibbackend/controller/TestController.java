@@ -1,4 +1,4 @@
-package org.ib.ibbackend.login;
+package org.ib.ibbackend.controller;
 
 import org.ib.ibbackend.entity.Product;
 import org.springframework.beans.factory.annotation.Autowired;

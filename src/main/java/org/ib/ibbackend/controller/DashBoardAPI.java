@@ -1,8 +1,4 @@
-package org.ib.ibbackend.login;
-
-import org.ib.ibbackend.entity.Product;
-
-import java.util.List;
+package org.ib.ibbackend.controller;
 
 public class DashBoardAPI {
   /*  @GetMapping("/api/dashboard")
