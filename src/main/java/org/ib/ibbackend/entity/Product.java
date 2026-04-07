@@ -1,6 +1,7 @@
 package org.ib.ibbackend.entity;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import jakarta.persistence.Entity;
 
@@ -29,6 +30,8 @@ public class Product {
 
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
+    @Column(name = "expiry_date")
+    private LocalDate expiryDate;
 
     // Default constructor (required by JPA)
     public Product() {}
@@ -54,4 +57,8 @@ public class Product {
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
-}
+
+    public LocalDate getExpiryDate() { return expiryDate; }
+    public void setExpiryDate(LocalDate expiryDate) { this.expiryDate = expiryDate;}
+
+    }
