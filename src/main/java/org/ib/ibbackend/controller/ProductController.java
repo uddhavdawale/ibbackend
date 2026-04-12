@@ -15,7 +15,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @RestController
-@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:*"})
+@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:8080/"})
 @RequestMapping("/api/products")
 public class ProductController {
 

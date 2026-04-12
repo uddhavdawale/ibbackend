@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 
 @RestController
-@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:*"})
+/*@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:*"})*/
 @RequestMapping("/api/billing")
 public class BillingController {
 

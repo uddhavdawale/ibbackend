@@ -1,6 +1,9 @@
 package org.ib.ibbackend.entity;
 
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonSetter;
+import com.fasterxml.jackson.annotation.Nulls;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
 
@@ -12,9 +15,11 @@ public class InvoiceItem {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // 👈 Foreign key to Invoice
-    @Column(name = "invoice_id", insertable = false, updatable = false)
-    private Long invoiceId;
+    // ✅ CRITICAL: Add ManyToOne reference
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "invoice_id")  // Maps to invoice_id column
+    @JsonBackReference
+    private Invoice invoice;
 
     private Long productId;
 
@@ -30,10 +35,10 @@ public class InvoiceItem {
     private Integer gstRate;
 
     @Column(nullable = false, precision = 10, scale = 2)
-    private BigDecimal price;
+    private BigDecimal price=BigDecimal.ZERO;
 
     @Column(nullable = false)
-    private Integer qty;
+    private Integer qty=1;
 
     // 👈 Calculated fields (stored for performance)
     @Column(name = "item_subtotal", precision = 10, scale = 2)
@@ -75,8 +80,6 @@ public class InvoiceItem {
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
-    public Long getInvoiceId() { return invoiceId; }
-    public void setInvoiceId(Long invoiceId) { this.invoiceId = invoiceId; }
 
     public Long getProductId() { return productId; }
     public void setProductId(Long productId) { this.productId = productId; }
@@ -97,6 +100,7 @@ public class InvoiceItem {
     }
 
     public BigDecimal getPrice() { return price; }
+    @JsonSetter(nulls = Nulls.AS_EMPTY)  // Jackson: null → empty string → parse to 0
     public void setPrice(BigDecimal price) {
         this.price = price;
         calculateTotals();  // Recalculate on price change
@@ -107,6 +111,8 @@ public class InvoiceItem {
         this.qty = qty;
         calculateTotals();  // Recalculate on qty change
     }
+    public Invoice getInvoice() { return invoice; }
+    public void setInvoice(Invoice invoice) { this.invoice = invoice; }
 
     public BigDecimal getItemSubtotal() { return itemSubtotal; }
     public void setItemSubtotal(BigDecimal itemSubtotal) { this.itemSubtotal = itemSubtotal; }

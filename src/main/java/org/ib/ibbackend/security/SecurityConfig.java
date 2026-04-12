@@ -26,9 +26,10 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
+                .csrf(csrf -> csrf.disable())  // API disable CSRF
                 // 👈 CORS FIRST (before security)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .csrf(csrf -> csrf.disable())  // API disable CSRF
+
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/**").permitAll()  // 👈 All APIs public
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
@@ -45,7 +46,7 @@ public class SecurityConfig {
                 "http://localhost:5173",     // Vite dev
                 "http://localhost:3000",     // CRA fallback
                 "https://*.vercel.app",      // Production
-                "http://localhost:*"         // All local ports
+                "http://localhost:8080"         // All local ports
         ));
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(Arrays.asList("*"));

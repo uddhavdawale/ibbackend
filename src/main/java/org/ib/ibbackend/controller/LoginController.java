@@ -16,7 +16,7 @@ import java.util.Map;
 import java.util.Optional;
 
 @RestController()
-@CrossOrigin(origins = {  "http://localhost:5173","http://ibbackend:8080/api/" , "http://localhost:4173","https://ibfrontendlive.vercel.app/"})
+@CrossOrigin(origins = {  "http://localhost:5173","http://ibbackend:8080/api/" , "http://localhost:4173","https://ibfrontendlive.vercel.app/","http://localhost:8080/"})
 public class LoginController {
     @Autowired
     private UserRepository userRepository;

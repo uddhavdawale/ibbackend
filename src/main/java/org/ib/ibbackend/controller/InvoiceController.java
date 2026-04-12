@@ -1,11 +1,14 @@
 package org.ib.ibbackend.controller;
 
 import jakarta.servlet.http.HttpServletResponse;
+import org.ib.ibbackend.dto.InvoiceRequest;
 import org.ib.ibbackend.entity.Invoice;
 import org.ib.ibbackend.entity.InvoiceItem;
 import org.ib.ibbackend.entity.Product;
+import org.ib.ibbackend.repository.InvoiceItemRepository;
 import org.ib.ibbackend.repository.InvoiceRepository;
 import org.ib.ibbackend.repository.ProductRepository;
+import org.ib.ibbackend.service.SequenceService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -18,10 +21,12 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
-@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:*"})
+@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:8080"})
 @RequestMapping("/api/invoices")
 public class InvoiceController {
 
@@ -29,13 +34,21 @@ public class InvoiceController {
     private InvoiceRepository invoiceRepository;
 
     @Autowired
-    private ProductRepository productRepository;
+    private InvoiceItemRepository invoiceItemRepository;
 
+    @Autowired
+    private ProductRepository productRepository;
+    @Autowired private
+    SequenceService seqService;
     // 👈 CREATE INVOICE + STOCK DEDUCTION
-    @PostMapping
-    @Transactional
+
     public ResponseEntity<?> createInvoice(@RequestBody Invoice invoiceRequest) {
         try {
+            String invoiceNo = String.format("INV-%d/%04d",
+                    java.time.Year.now().getValue(),
+                    seqService.nextValue("invoice"));
+            invoiceRequest.setInvoiceNo(invoiceNo);
+
             // Step 1: Validate & deduct stock
             for (InvoiceItem item : invoiceRequest.getItems()) {
                 Product product = productRepository.findById(item.getProductId())
@@ -50,11 +63,22 @@ public class InvoiceController {
                 product.setQuantity(newStock);
                 productRepository.save(product);
             }
+            List<InvoiceItem> invoiceItems = invoiceRequest.getItems().stream()
+                    .map(dto -> {
+                        InvoiceItem item = new InvoiceItem(
+                                dto.getProductId(), dto.getName(), dto.getSku(),
+                                dto.getHsn(), dto.getGstRate(), dto.getPrice(), dto.getQty()
+                        );
+                        return item;
+                    })
+                    .collect(Collectors.toList());
 
             // Step 2: Calculate totals
+
             BigDecimal subtotal = invoiceRequest.getItems().stream()
                     .map(item -> item.getPrice().multiply(BigDecimal.valueOf(item.getQty())))
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+                    .collect(Collectors.reducing(BigDecimal.ZERO, BigDecimal::add));
+
 
             BigDecimal gstAmount = invoiceRequest.getItems().stream()
                     .map(item -> item.getPrice()
@@ -77,11 +101,16 @@ public class InvoiceController {
                     grandTotal.setScale(2, RoundingMode.HALF_UP),
                     invoiceRequest.getItems()
             );
+            // ✅ CRITICAL: Set bidirectional relationship
+            for (InvoiceItem item : invoiceItems) {
+                item.setInvoice(invoice);  // Sets invoice_id FK
+            }
 
             Invoice saved = invoiceRepository.save(invoice);
             return ResponseEntity.ok(saved);
 
         } catch (Exception e) {
+            e.printStackTrace();
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         }
     }
@@ -121,4 +150,66 @@ public class InvoiceController {
         response.setHeader("Content-Disposition", "attachment; filename=invoice.pdf");
         response.getOutputStream().write(pdf);
     }*/
+    @PostMapping
+    @Transactional
+    public ResponseEntity<?> createInvoice(@RequestBody InvoiceRequest invoiceRequest) {
+        try {
+            String invoiceNo = String.format("INV-%d/%04d",
+                    java.time.Year.now().getValue(),
+                    seqService.nextValue("invoice"));
+
+            // 1. Stock deduction (unchanged)
+            for (InvoiceItem item : invoiceRequest.getItems()) {
+                Product product = productRepository.findById(item.getProductId())
+                        .orElseThrow(() -> new RuntimeException("Product not found: " + item.getProductId()));
+                int newStock = product.getQuantity() - item.getQty();
+                if (newStock < 0) {
+                    return ResponseEntity.badRequest().body("Insufficient stock for " + item.getName());
+                }
+                product.setQuantity(newStock);
+                productRepository.save(product);
+            }
+
+            // 2. ✅ Create & calculate items FIRST
+            List<InvoiceItem> invoiceItems = invoiceRequest.getItems().stream()
+                    .map(dto -> {
+                        InvoiceItem item = new InvoiceItem(dto.getProductId(), dto.getName(),
+                                dto.getSku(), dto.getHsn(), dto.getGstRate(),
+                                dto.getPrice(), dto.getQty());
+                        return item;
+                    })
+                    .collect(Collectors.toList());
+
+            // Calculate totals from items
+            BigDecimal subtotal = invoiceItems.stream()
+                    .map(InvoiceItem::getItemSubtotal)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal gstAmount = invoiceItems.stream()
+                    .map(InvoiceItem::getItemGst)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal grandTotal = subtotal.add(gstAmount);
+
+            // 3. ✅ Create invoice with items (no save yet)
+            Invoice invoice = new Invoice(invoiceNo, invoiceRequest.getCustomerName(),
+                    invoiceRequest.getCustomerPhone(), LocalDate.now(),
+                    invoiceRequest.getPaymentMethod(), subtotal, gstAmount, grandTotal,
+                    invoiceItems);
+
+            // 4. ✅ Link items AFTER totals calculated
+            for (InvoiceItem item : invoiceItems) {
+                item.setInvoice(invoice);
+            }
+
+            // 5. ✅ SINGLE SAVE - cascade works!
+            Invoice saved = invoiceRepository.save(invoice);
+            System.out.println("✅ Saved " + saved.getInvoiceNo() +
+                    " with " + saved.getItems().size() + " items");
+
+            return ResponseEntity.ok(saved);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        }
+    }
 }
