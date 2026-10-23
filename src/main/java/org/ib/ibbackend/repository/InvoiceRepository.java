@@ -26,6 +26,9 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
             "WHERE FUNCTION('DATE', i.date) = CURRENT_DATE")
     BigDecimal getTodaySales();
 
+    @Query("SELECT COUNT(i) FROM Invoice i WHERE FUNCTION('DATE', i.date) = CURRENT_DATE")
+    long countTodayInvoices();
+
     // Pending invoices count
     @Query("SELECT COUNT(i) FROM Invoice i WHERE i.status != 'PAID'")
     long getPendingInvoicesCount();

@@ -36,4 +36,7 @@ public interface ProductRepository extends JpaRepository<Product,Long> {
     @Query("SELECT COUNT(p) FROM Product p WHERE p.expiryDate IS NOT NULL AND p.expiryDate <= :threshold")
     long countExpiringSoon(@Param("threshold") LocalDate threshold);
 
+    @Query("SELECT p FROM Product p WHERE p.tenant.id = :tenantId")
+    Page<Product> findByTenant(@Param("tenantId") Long tenantId, Pageable pageable);
+
 }

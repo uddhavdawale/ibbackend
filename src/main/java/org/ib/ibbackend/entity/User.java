@@ -1,12 +1,19 @@
 package org.ib.ibbackend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.Set;
+
+ enum Role {
+    USER, STORE_ADMIN
+}
 
 @Entity
 @Table(name = "users", uniqueConstraints = @UniqueConstraint(columnNames = "email"))
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Data
 public class User {
     @Id
@@ -28,7 +35,9 @@ public class User {
     private String phone;
     private String gstin;  // Retailer
     private String pan;    // CA Partner
-    private String role;   // retailer/partner
+
+
+    private String role= "STORE_ADMIN";   // retailer/partner
 
     private String address;
     private String city;
@@ -36,6 +45,11 @@ public class User {
 
     private LocalDateTime createdAt = LocalDateTime.now();
     private boolean emailVerified = false;
+
+
+    @ManyToOne
+    @JoinColumn(name = "tenant_id")
+    private Tenant tenant;
 
     // Default constructor
     public User() {}
@@ -80,5 +94,13 @@ public class User {
 
     public void setPincode(String pincode) {
         this.pincode = pincode;
+    }
+
+    public void setTenant(Tenant tenant) {
+        this.tenant = tenant;
+    }
+
+    public Tenant getTenant() {
+        return tenant;
     }
 }

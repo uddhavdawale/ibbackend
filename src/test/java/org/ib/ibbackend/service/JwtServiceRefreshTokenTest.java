@@ -1,0 +1,57 @@
+package org.ib.ibbackend.service;
+
+import org.ib.ibbackend.entity.Tenant;
+import org.ib.ibbackend.entity.User;
+import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class JwtServiceRefreshTokenTest {
+
+    @Test
+    void shouldGenerateAndValidateRefreshTokens() {
+        JwtService jwtService = new JwtService(
+                "dev-access-secret-change-me-please-32-plus-bytes-64-chars-long-123456",
+                "dev-refresh-secret-change-me-please-32-plus-bytes-64-chars-long-654321",
+                30L * 60L * 1000L,
+                7L * 24L * 60L * 60L * 1000L
+        );
+
+        User user = new User();
+        user.setEmail("demo@example.com");
+        user.setRole("STORE_ADMIN");
+
+        Tenant tenant = new Tenant();
+        tenant.setId(7);
+        user.setTenant(tenant);
+
+        String accessToken = jwtService.generateAccessToken(user);
+        String refreshToken = jwtService.generateRefreshToken(user);
+
+        assertThat(jwtService.extractUsername(accessToken)).isEqualTo("demo@example.com");
+        assertThat(jwtService.isAccessTokenValid(accessToken, user)).isTrue();
+        assertThat(jwtService.isRefreshTokenValid(refreshToken, user)).isTrue();
+        assertThat(jwtService.getTenantId(accessToken)).isEqualTo(7L);
+        assertThat(jwtService.getRefreshTenantId(refreshToken)).isEqualTo(7L);
+    }
+
+    @Test
+    void shouldUseLongerDefaultAccessTokenExpiry() {
+        JwtService jwtService = new JwtService(
+                "dev-access-secret-change-me-please-32-plus-bytes-64-chars-long-123456",
+                "dev-refresh-secret-change-me-please-32-plus-bytes-64-chars-long-654321",
+                30L * 60L * 1000L,
+                7L * 24L * 60L * 60L * 1000L
+        );
+
+        User user = new User();
+        user.setEmail("demo@example.com");
+        user.setRole("STORE_ADMIN");
+
+        String token = jwtService.generateAccessToken(user);
+        long expiryDelta = jwtService.extractClaims(token).getExpiration().getTime()
+                - jwtService.extractClaims(token).getIssuedAt().getTime();
+
+        assertThat(expiryDelta).isGreaterThanOrEqualTo(30L * 60L * 1000L);
+    }
+}

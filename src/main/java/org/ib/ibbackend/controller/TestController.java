@@ -8,7 +8,8 @@ import  org.ib.ibbackend.repository.ProductRepository;
 import java.util.List;
 
 @RestController
-@CrossOrigin(origins = "http://localhost:5173")
+@CrossOrigin(originPatterns  = "*")
+//@CrossOrigin(origins = "http://localhost:5173")
 public class TestController {
 
     @Autowired

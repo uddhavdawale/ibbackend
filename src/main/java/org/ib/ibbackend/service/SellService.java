@@ -26,10 +26,9 @@ public class SellService {
             LocalDate monthStart = LocalDate.now().minusMonths(i).withDayOfMonth(1);
             BigDecimal sales = salesRepository.sumSalesByMonth(monthStart.getYear(), monthStart.getMonthValue());
 
-            Map<String, Object> data = Map.of(
-                    "month", monthStart.format(DateTimeFormatter.ofPattern("MMM yyyy")),
-                    "sales", (sales != null ? sales : BigDecimal.ZERO).intValue()  // ✅ Fixed!
-            );
+            Map<String, Object> data = new java.util.LinkedHashMap<>();
+            data.put("month", monthStart.format(DateTimeFormatter.ofPattern("MMM").withLocale(java.util.Locale.ENGLISH)).substring(0, 3));
+            data.put("sales", (sales != null ? sales : BigDecimal.ZERO).intValue());
             result.add(data);
         }
         return result;

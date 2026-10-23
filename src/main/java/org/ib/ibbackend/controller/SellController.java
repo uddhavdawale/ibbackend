@@ -13,7 +13,9 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 @RestController
-@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:3000"})  // Vite + CRA
+@CrossOrigin(originPatterns  = "*")
+
+//@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:3000"})  // Vite + CRA
 @RequestMapping("/api")
 public class SellController
 {

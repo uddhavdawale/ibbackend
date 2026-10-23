@@ -1,4 +1,5 @@
 package org.ib.ibbackend.entity;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -9,6 +10,7 @@ import jakarta.persistence.Entity;
 
 @Entity
 @Table(name = "products")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Product {
 
     @Id
@@ -26,16 +28,32 @@ public class Product {
     @Column(name = "min_stock")
     private Integer minStock;
 
+    @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal price;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
+
+    @Column(name = "category")
+    private String category = "General";
+
     @Column(name = "expiry_date")
     private LocalDate expiryDate;
+
+    // ✅ ADD THIS RELATIONSHIP
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "tenant_id")
+    private Tenant tenant;
 
     // Default constructor (required by JPA)
     public Product() {
     }
+
+    // ✅ ADD GETTERS/SETTERS
+    public Tenant getTenant() { return tenant; }
+    public void setTenant(Tenant tenant) { this.tenant = tenant; }
+
+
 
     // Getters & Setters
     public Long getId() {
@@ -92,6 +110,14 @@ public class Product {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public String getCategory() {
+        return category;
+    }
+
+    public void setCategory(String category) {
+        this.category = category == null || category.isBlank() ? "General" : category;
     }
 
     public LocalDate getExpiryDate() {

@@ -19,9 +19,16 @@
 
     <properties>
         <java.version>17</java.version>  <!-- Java 17 ✅ -->
+        <jjwt.version>0.11.5</jjwt.version> <!-- Latest stable -->
     </properties>
 
     <dependencies>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
         <!-- Web API -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -65,7 +72,24 @@
             <scope>runtime</scope>
             <optional>true</optional>
         </dependency>
-
+        <!-- JJWT - ALL 3 modules REQUIRED -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>${jjwt.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
         <!-- Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

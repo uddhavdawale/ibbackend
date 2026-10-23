@@ -1,6 +1,7 @@
 
 package org.ib.ibbackend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
@@ -9,8 +10,9 @@ import java.util.List;
 
 @Entity
 @Table(name = "invoices")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Invoice {
-    enum InvoiceStatus {
+    public enum InvoiceStatus {
         PENDING, PAID, CANCELLED
     }
 
@@ -37,6 +39,11 @@ public class Invoice {
 
     @Column(nullable = false)
     private InvoiceStatus status = InvoiceStatus.PENDING;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "tenant_id")
+    private Tenant tenant;
+
     // Constructors
     public Invoice() {}
 
@@ -87,5 +94,7 @@ public class Invoice {
 
     public InvoiceStatus getStatus() { return status; }
     public void setStatus(InvoiceStatus status) { this.status = status; }
+    public Tenant getTenant() { return tenant; }
+    public void setTenant(Tenant tenant) { this.tenant = tenant; }
 
 }
