@@ -14,6 +14,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -35,6 +36,11 @@ public class ProductController {
             @RequestParam(defaultValue = "id") String sortBy,
             @RequestParam(defaultValue = "asc") String sortDir
     ) {
+        Long tenantId = TenantContext.getCurrentTenant();
+        if (tenantId == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+
         Sort sort = sortDir.equalsIgnoreCase("desc")
                 ? Sort.by(sortBy).descending()
                 : Sort.by(sortBy).ascending();
@@ -44,13 +50,9 @@ public class ProductController {
         Page<Product> products;
 
         if (!search.isBlank()) {
-            products = productRepository.findByNameContainingIgnoreCaseOrSkuContainingIgnoreCase(
-                    search,
-                    search,
-                    pageable
-            );
+            products = productRepository.findBySearchAndTenantId(tenantId, search, pageable);
         } else {
-            products = productRepository.findAll(pageable);
+            products = productRepository.findByTenantId(tenantId, pageable);
         }
 
         Page<ProductResponse> response = products.map(this::mapToResponse);
@@ -75,11 +77,13 @@ public class ProductController {
     @PostMapping
     public ResponseEntity<?> addProduct(@RequestBody Product product) {
         Long tenantId = TenantContext.getCurrentTenant();
-        if (tenantId != null) {
-            Tenant tenant = new Tenant();
-            tenant.setId(Math.toIntExact(tenantId));
-            product.setTenant(tenant);
+        if (tenantId == null) {
+            throw new AccessDeniedException("Access denied");
         }
+
+        Tenant tenant = new Tenant();
+        tenant.setId(Math.toIntExact(tenantId));
+        product.setTenant(tenant);
 
         if (product.getCategory() == null || product.getCategory().isBlank()) {
             product.setCategory("General");
@@ -91,7 +95,12 @@ public class ProductController {
 
     @PutMapping("/{id}")
     public ResponseEntity<Product> updateProduct(@PathVariable Long id, @RequestBody Product product) {
-        return productRepository.findById(id)
+        Long tenantId = TenantContext.getCurrentTenant();
+        if (tenantId == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+
+        return productRepository.findByIdAndTenantId(id, tenantId)
                 .map(existing -> {
                     existing.setName(product.getName());
                     existing.setSku(product.getSku());
@@ -107,10 +116,16 @@ public class ProductController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteProduct(@PathVariable Long id) {
-        if (productRepository.existsById(id)) {
-            productRepository.deleteById(id);
-            return ResponseEntity.ok().build();
+        Long tenantId = TenantContext.getCurrentTenant();
+        if (tenantId == null) {
+            throw new AccessDeniedException("Access denied");
         }
-        return ResponseEntity.notFound().build();
+
+        return productRepository.findByIdAndTenantId(id, tenantId)
+                .map(existing -> {
+                    productRepository.delete(existing);
+                    return ResponseEntity.ok().<Void>build();
+                })
+                .orElse(ResponseEntity.notFound().build());
     }
 }

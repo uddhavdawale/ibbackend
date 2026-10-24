@@ -1,8 +1,10 @@
 package org.ib.ibbackend.service;
 
 import org.ib.ibbackend.exception.ValidationException;
+import org.ib.ibbackend.repository.InvoiceRepository;
 import org.ib.ibbackend.repository.ProductRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.Pageable;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.io.IOException;
@@ -82,5 +84,13 @@ class InventoryUploadServiceTest {
         assertFalse(repositorySource.contains("Statement"));
         assertFalse(repositorySource.contains("\" + "));
         assertFalse(repositorySource.contains("' +"));
+    }
+
+    @Test
+    void shouldExposeTenantScopedProductAndInvoiceQueries() throws NoSuchMethodException {
+        ProductRepository.class.getMethod("findByTenantId", Long.class, Pageable.class);
+        ProductRepository.class.getMethod("findByIdAndTenantId", Long.class, Long.class);
+        InvoiceRepository.class.getMethod("findByTenantId", Long.class, Pageable.class);
+        InvoiceRepository.class.getMethod("findByIdAndTenantId", Long.class, Long.class);
     }
 }

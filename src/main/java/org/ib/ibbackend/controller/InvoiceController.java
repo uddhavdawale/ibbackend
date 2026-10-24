@@ -5,6 +5,8 @@ import org.ib.ibbackend.dto.InvoiceRequest;
 import org.ib.ibbackend.entity.Invoice;
 import org.ib.ibbackend.entity.InvoiceItem;
 import org.ib.ibbackend.entity.Product;
+import org.ib.ibbackend.entity.Tenant;
+import org.ib.ibbackend.filter.TenantContext;
 import org.ib.ibbackend.repository.InvoiceItemRepository;
 import org.ib.ibbackend.repository.InvoiceRepository;
 import org.ib.ibbackend.repository.ProductRepository;
@@ -121,15 +123,20 @@ public class InvoiceController {
             @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "") String search) {
 
-        log.info("Fetching invoices page={} size={} search={} status={}", page, size, search, status);
+        Long tenantId = TenantContext.getCurrentTenant();
+        if (tenantId == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Access denied");
+        }
+
+        log.info("Fetching invoices page={} size={} search={} status={} for tenant={}", page, size, search, status, tenantId);
         Sort sort = Sort.by("id").descending();
         Pageable pageable = PageRequest.of(page, size, sort);
 
         Page<Invoice> invoices;
         if (!search.isEmpty()) {
-            invoices = invoiceRepository.findByInvoiceNoContainingIgnoreCase(search, pageable);
+            invoices = invoiceRepository.findBySearchAndTenantId(tenantId, search, pageable);
         } else {
-            invoices = invoiceRepository.findAll(pageable);
+            invoices = invoiceRepository.findByTenantId(tenantId, pageable);
         }
 
         if (status != null && !status.isBlank()) {
@@ -165,8 +172,13 @@ public class InvoiceController {
 
     @GetMapping("/{id}")
     public ResponseEntity<Invoice> getInvoice(@PathVariable Long id) {
-        log.info("Fetching invoice by id={}", id);
-        return invoiceRepository.findById(id)
+        Long tenantId = TenantContext.getCurrentTenant();
+        if (tenantId == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Access denied");
+        }
+
+        log.info("Fetching invoice by id={} for tenant={}", id, tenantId);
+        return invoiceRepository.findByIdAndTenantId(id, tenantId)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -207,10 +219,18 @@ public class InvoiceController {
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             BigDecimal grandTotal = subtotal.add(gstAmount);
 
+            Long tenantId = TenantContext.getCurrentTenant();
+            if (tenantId == null) {
+                throw new org.springframework.security.access.AccessDeniedException("Access denied");
+            }
+
             Invoice invoice = new Invoice(invoiceNo, invoiceRequest.getCustomerName(),
                     invoiceRequest.getCustomerPhone(), LocalDate.now(),
                     invoiceRequest.getPaymentMethod(), subtotal, gstAmount, grandTotal,
                     invoiceItems);
+            Tenant tenant = new Tenant();
+            tenant.setId(Math.toIntExact(tenantId));
+            invoice.setTenant(tenant);
 
             for (InvoiceItem item : invoiceItems) {
                 item.setInvoice(invoice);

@@ -1,6 +1,7 @@
 package org.ib.ibbackend.controller;
 
 import org.ib.ibbackend.entity.Product;
+import org.ib.ibbackend.filter.TenantContext;
 import org.ib.ibbackend.repository.InvoiceRepository;
 import org.ib.ibbackend.repository.ProductRepository;
 import org.slf4j.Logger;
@@ -37,13 +38,18 @@ public class DashBoardAPI {
 
     @GetMapping("/metrics")
     public ResponseEntity<Map<String, Object>> getDashboardMetrics() {
-        log.info("Fetching dashboard metrics");
+        Long tenantId = TenantContext.getCurrentTenant();
+        if (tenantId == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Access denied");
+        }
+
+        log.info("Fetching dashboard metrics for tenant={}", tenantId);
         Map<String, Object> metrics = new HashMap<>();
 
-        BigDecimal salesToday = invoiceRepo.getTodaySales();
-        BigDecimal pendingPayments = invoiceRepo.getPendingAmount();
-        long lowStock = productRepo.countLowStockItems();
-        long ordersToday = invoiceRepo.countTodayInvoices();
+        BigDecimal salesToday = invoiceRepo.getTodaySalesByTenantId(tenantId);
+        BigDecimal pendingPayments = invoiceRepo.getPendingAmountByTenantId(tenantId);
+        long lowStock = productRepo.countLowStockItemsByTenantId(tenantId);
+        long ordersToday = invoiceRepo.countTodayInvoicesByTenantId(tenantId);
 
         metrics.put("salesToday", salesToday != null ? salesToday.intValue() : 0);
         metrics.put("pendingPayments", pendingPayments != null ? pendingPayments.intValue() : 0);
@@ -55,19 +61,24 @@ public class DashBoardAPI {
 
     @GetMapping("/stats")
     public ResponseEntity<Map<String, Object>> getDashboardStats() {
+        Long tenantId = TenantContext.getCurrentTenant();
+        if (tenantId == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Access denied");
+        }
+
         Map<String, Object> stats = new HashMap<>();
-        log.info("Fetching dashboard stats");
+        log.info("Fetching dashboard stats for tenant={}", tenantId);
 
         try {
-            stats.put("totalProducts", productRepo.count());
-            stats.put("totalOrders", invoiceRepo.count());
-            stats.put("lowStockItems", productRepo.countLowStockItems());
-            stats.put("totalRevenue", invoiceRepo.getTotalRevenue());
-            stats.put("salesToday", invoiceRepo.getTodaySales());
-            stats.put("pendingAmount", 0);
-            stats.put("pendingCount", 0);
+            stats.put("totalProducts", productRepo.countByTenantId(tenantId));
+            stats.put("totalOrders", invoiceRepo.countByTenantId(tenantId));
+            stats.put("lowStockItems", productRepo.countLowStockItemsByTenantId(tenantId));
+            stats.put("totalRevenue", invoiceRepo.getTotalRevenueByTenantId(tenantId));
+            stats.put("salesToday", invoiceRepo.getTodaySalesByTenantId(tenantId));
+            stats.put("pendingAmount", invoiceRepo.getPendingAmountByTenantId(tenantId));
+            stats.put("pendingCount", invoiceRepo.getPendingCountByTenantId(tenantId));
 
-            List<Product> productsWithExpiry = productRepo.findAllWithExpiry();
+            List<Product> productsWithExpiry = productRepo.findAllWithExpiryByTenantId(tenantId);
             stats.put("products", productsWithExpiry);
 
             long soonExpiringCount = productsWithExpiry.stream()
@@ -81,7 +92,7 @@ public class DashBoardAPI {
             stats.put("soonExpiring", soonExpiringCount);
 
             LocalDate thirtyDaysFromNow = LocalDate.now().plusDays(30);
-            stats.put("soonExpiryCount", productRepo.countExpiringSoon(thirtyDaysFromNow));
+            stats.put("soonExpiryCount", productRepo.countExpiringSoonByTenantId(tenantId, thirtyDaysFromNow));
             return ResponseEntity.ok(stats);
 
         } catch (Exception e) {

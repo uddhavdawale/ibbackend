@@ -80,21 +80,17 @@ public class User {
     public String getGstin() { return gstin; }
     public void setGstin(String gstin) { this.gstin = gstin; }
 
-    public void setAddress(String address) {
-        this.address = address;
-    }
+    public String getPan() { return pan; }
+    public void setPan(String pan) { this.pan = pan; }
 
-    public void setPan(String pan) {
-        this.pan = pan;
-    }
+    public String getAddress() { return address; }
+    public void setAddress(String address) { this.address = address; }
 
-    public void setCity(String city) {
-        this.city = city;
-    }
+    public String getCity() { return city; }
+    public void setCity(String city) { this.city = city; }
 
-    public void setPincode(String pincode) {
-        this.pincode = pincode;
-    }
+    public String getPincode() { return pincode; }
+    public void setPincode(String pincode) { this.pincode = pincode; }
 
     public void setTenant(Tenant tenant) {
         this.tenant = tenant;
