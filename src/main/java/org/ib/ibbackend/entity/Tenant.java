@@ -1,17 +1,22 @@
 package org.ib.ibbackend.entity;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 @Entity
-@Table(name = "tenants")
+@Table(name = "tenants", uniqueConstraints = {
+        @UniqueConstraint(name = "uk_tenants_code", columnNames = "code")
+})
 public class Tenant {
     @Id
     @GeneratedValue
     private int id;
     private String name; // "Shreeram Stores"
+    @Column(nullable = false, unique = true, length = 32)
     private String code; // "SHR"
 
     public String getCode() {

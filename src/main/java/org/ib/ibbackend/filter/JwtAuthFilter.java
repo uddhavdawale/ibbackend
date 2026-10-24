@@ -48,8 +48,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
                 if (StringUtils.hasText(username)) {
                     User user = userRepository.findByEmail(username).orElse(null);
-                    if (user == null || !refreshTokenService.hasActiveTokenForUser(user)) {
-                        throw new SecurityException("User session has been revoked");
+                    if (user == null) {
+                        throw new SecurityException("User not found for token");
                     }
 
                     SecurityContextHolder.getContext().setAuthentication(

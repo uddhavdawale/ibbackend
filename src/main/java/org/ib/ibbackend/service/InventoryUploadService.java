@@ -7,9 +7,15 @@ import org.apache.poi.ss.usermodel.*;
 import org.ib.ibbackend.dto.InventoryUploadResult;
 import org.ib.ibbackend.dto.InventoryUploadRow;
 import org.ib.ibbackend.entity.Product;
+import org.ib.ibbackend.entity.Tenant;
+import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.exception.ValidationException;
+import org.ib.ibbackend.filter.TenantContext;
 import org.ib.ibbackend.repository.ProductRepository;
+import org.ib.ibbackend.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -39,14 +45,33 @@ public class InventoryUploadService {
     private int maxRecordsPerUpload = MAX_RECORDS_PER_UPLOAD_DEFAULT;
 
     private final ProductRepository productRepository;
+    private final UserRepository userRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public InventoryUploadService(ProductRepository productRepository) {
+        this(productRepository, null);
+    }
+
+    @Autowired
+    public InventoryUploadService(ProductRepository productRepository, UserRepository userRepository) {
         this.productRepository = productRepository;
+        this.userRepository = userRepository;
     }
 
     @Transactional
     public InventoryUploadResult processUpload(MultipartFile file, String source, String recordsJson) {
+        return processUpload(file, source, recordsJson, null, null);
+    }
+
+    @Transactional
+    public InventoryUploadResult processUpload(MultipartFile file, String source, String recordsJson, Long requestedTenantId, Long requestedUserId) {
+        User authenticatedUser = null;
+        Long resolvedTenantId = null;
+        if (userRepository != null) {
+            authenticatedUser = resolveAuthenticatedUser(requestedUserId);
+            resolvedTenantId = resolveTenantId(authenticatedUser, requestedTenantId);
+        }
+
         List<InventoryUploadRow> rows;
 
         if (file != null && !file.isEmpty()) {
@@ -68,7 +93,7 @@ public class InventoryUploadService {
 
         List<String> errors = new ArrayList<>();
         for (InventoryUploadRow row : rows) {
-            validateRow(row, errors);
+            validateRow(row, errors, resolvedTenantId);
         }
 
         if (!errors.isEmpty()) {
@@ -88,7 +113,13 @@ public class InventoryUploadService {
                 continue;
             }
 
-            Product existingProduct = productRepository.findBySku(sku).orElse(null);
+            Product existingProduct = null;
+            if (resolvedTenantId != null) {
+                existingProduct = productRepository.findBySkuAndTenantId(sku, resolvedTenantId).orElse(null);
+            } else {
+                existingProduct = productRepository.findBySku(sku).orElse(null);
+            }
+
             Product product = existingProduct != null ? existingProduct : new Product();
             product.setName(row.getProduct().trim());
             product.setSku(sku);
@@ -96,6 +127,11 @@ public class InventoryUploadService {
             product.setMinStock(row.getMinStock());
             product.setPrice(row.getPrice());
             product.setCategory(row.getCategory());
+            if (authenticatedUser != null && authenticatedUser.getTenant() != null) {
+                if (product.getTenant() == null || !Objects.equals(Long.valueOf(product.getTenant().getId()), Long.valueOf(authenticatedUser.getTenant().getId()))) {
+                    product.setTenant(authenticatedUser.getTenant());
+                }
+            }
 
             Product saved = productRepository.save(product);
             if (saved == null) {
@@ -119,6 +155,52 @@ public class InventoryUploadService {
         }
 
         return new InventoryUploadResult(true, "Inventory uploaded successfully", created, updated, skipped, savedRecords);
+    }
+
+    private User resolveAuthenticatedUser(Long requestedUserId) {
+        if (userRepository == null) {
+            throw new ValidationException("Authentication is required to upload inventory");
+        }
+
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        String email = authentication != null ? authentication.getName() : null;
+
+        User currentUser = null;
+        if (email != null && !email.isBlank()) {
+            currentUser = userRepository.findByEmail(email).orElse(null);
+        }
+        if (currentUser == null && requestedUserId != null) {
+            currentUser = userRepository.findById(requestedUserId).orElse(null);
+        }
+        if (currentUser == null) {
+            throw new ValidationException("Authenticated user could not be resolved");
+        }
+
+        if (requestedUserId != null && !Objects.equals(currentUser.getId(), requestedUserId)) {
+            throw new ValidationException("User mismatch: provided userId does not match the authenticated user");
+        }
+
+        if (currentUser.getTenant() == null) {
+            throw new ValidationException("User is not assigned to a tenant");
+        }
+
+        return currentUser;
+    }
+
+    private Long resolveTenantId(User authenticatedUser, Long requestedTenantId) {
+        Long contextTenantId = TenantContext.getCurrentTenant();
+        Long userTenantId = authenticatedUser.getTenant() != null ? (long) authenticatedUser.getTenant().getId() : null;
+        Long resolvedTenantId = contextTenantId != null ? contextTenantId : userTenantId;
+
+        if (resolvedTenantId == null) {
+            throw new ValidationException("Tenant could not be resolved for the authenticated user");
+        }
+
+        if (requestedTenantId != null && !Objects.equals(requestedTenantId, resolvedTenantId)) {
+            throw new ValidationException("Tenant mismatch: provided tenantId does not match the authenticated tenant");
+        }
+
+        return resolvedTenantId;
     }
 
     private void validateUploadFile(MultipartFile file) {
@@ -288,7 +370,7 @@ public class InventoryUploadService {
         if (!missing.isEmpty()) throw new ValidationException("Missing required columns: " + String.join(", ", missing));
     }
 
-    private void validateRow(InventoryUploadRow row, List<String> errors) {
+    private void validateRow(InventoryUploadRow row, List<String> errors, Long currentTenantId) {
         if (row == null) {
             errors.add("Encountered an empty row");
             return;
@@ -307,7 +389,11 @@ public class InventoryUploadService {
             if (normalizedSku.length() > 100) {
                 errors.add("SKU is too long");
             }
-            if (productRepository.existsBySku(normalizedSku)) {
+
+            boolean skuExistsForCurrentTenant = currentTenantId != null
+                    ? productRepository.existsBySkuAndTenantId(normalizedSku, currentTenantId)
+                    : productRepository.existsBySku(normalizedSku);
+            if (skuExistsForCurrentTenant) {
                 errors.add("SKU " + row.getSku() + " already exists");
             }
         }

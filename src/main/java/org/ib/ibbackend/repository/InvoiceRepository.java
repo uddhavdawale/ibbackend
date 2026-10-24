@@ -16,8 +16,12 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
 
     // Search by invoice number
     Page<Invoice> findByInvoiceNoContainingIgnoreCase(String invoiceNo, Pageable pageable);
-    Page<Invoice> findByTenantId(Long tenantId, Pageable pageable);
-    java.util.Optional<Invoice> findByIdAndTenantId(Long id, Long tenantId);
+
+    @Query("SELECT i FROM Invoice i WHERE i.tenant.id = :tenantId")
+    Page<Invoice> findByTenantId(@Param("tenantId") Long tenantId, Pageable pageable);
+
+    @Query("SELECT i FROM Invoice i WHERE i.id = :id AND i.tenant.id = :tenantId")
+    java.util.Optional<Invoice> findByIdAndTenantId(@Param("id") Long id, @Param("tenantId") Long tenantId);
 
     // Total revenue (sum of grand_total)
     @Query("SELECT COALESCE(SUM(i.grandTotal), 0) FROM Invoice i")

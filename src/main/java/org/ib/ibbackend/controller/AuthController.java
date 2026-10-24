@@ -3,7 +3,9 @@ package org.ib.ibbackend.controller;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import org.ib.ibbackend.dto.*;
+import org.ib.ibbackend.entity.Tenant;
 import org.ib.ibbackend.entity.User;
+import org.ib.ibbackend.repository.TenantRepository;
 import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.service.JwtService;
 import org.ib.ibbackend.service.RefreshTokenService;
@@ -27,6 +29,9 @@ public class AuthController {
 
     @Autowired
     private UserRepository userRepo;
+
+    @Autowired
+    private TenantRepository tenantRepo;
 
     @Autowired
     private BCryptPasswordEncoder bcrypt;
@@ -64,6 +69,8 @@ public class AuthController {
         userPayload.put("name", user.getOwnerName());
         userPayload.put("email", user.getEmail());
         userPayload.put("role", user.getRole());
+        userPayload.put("businessName", user.getBusinessName());
+        userPayload.put("tenantId", user.getTenant() != null ? user.getTenant().getId() : null);
 
         Map<String, Object> response = new HashMap<>();
         response.put("message", "Login successful");
@@ -119,6 +126,8 @@ public class AuthController {
             userPayload.put("name", user.getOwnerName());
             userPayload.put("email", user.getEmail());
             userPayload.put("role", user.getRole());
+            userPayload.put("businessName", user.getBusinessName());
+            userPayload.put("tenantId", user.getTenant() != null ? user.getTenant().getId() : null);
 
             RefreshTokenResponse response = new RefreshTokenResponse(true, "Token refreshed successfully");
             response.setAccessToken(newAccessToken);
@@ -175,16 +184,25 @@ public class AuthController {
     @PostMapping("/signup")
     public ResponseEntity<ApiResponse> signup(@RequestBody SignupRequest request) {
         try {
+            if (request == null || request.getEmail() == null || request.getEmail().isBlank()) {
+                return ResponseEntity.badRequest()
+                        .body(new ApiResponse(false, "Email is required"));
+            }
+
             if (userRepo.existsByEmail(request.getEmail())) {
                 return ResponseEntity.badRequest()
                         .body(new ApiResponse(false, "Email already exists"));
             }
 
             String userPassword = bcrypt.encode(request.getPasswordHash());
+            String businessName = request.getBusinessName() == null ? "Default Business" : request.getBusinessName().trim();
+            if (businessName.isBlank()) {
+                businessName = "Default Business";
+            }
 
             User user = new User();
-            user.setBusinessName(request.getBusinessName().trim());
-            user.setOwnerName(request.getOwnerName().trim());
+            user.setBusinessName(businessName);
+            user.setOwnerName(request.getOwnerName() == null ? "Owner" : request.getOwnerName().trim());
             user.setEmail(request.getEmail().trim());
             user.setPasswordHash(userPassword);
             user.setRole(request.getRole());
@@ -194,6 +212,7 @@ public class AuthController {
             user.setAddress(request.getAddress());
             user.setCity(request.getCity());
             user.setPincode(request.getPincode());
+            user.setTenant(createUniqueTenantForUser(businessName, request.getEmail().trim()));
 
             userRepo.save(user);
 
@@ -212,9 +231,52 @@ public class AuthController {
 
         Optional<User> userByEmail = userRepo.findByEmail(username);
         if (userByEmail.isPresent()) {
-            return userByEmail;
+            return ensureTenant(userByEmail.get());
         }
 
-        return userRepo.findByOwnerName(username);
+        return userRepo.findByOwnerName(username)
+                .flatMap(this::ensureTenant);
+    }
+
+    private Optional<User> ensureTenant(User user) {
+        if (user == null) {
+            return Optional.empty();
+        }
+        if (user.getTenant() == null) {
+            user.setTenant(createUniqueTenantForUser(user.getBusinessName(), user.getEmail()));
+            userRepo.save(user);
+        }
+        return Optional.of(user);
+    }
+
+    private Tenant createUniqueTenantForUser(String businessName, String email) {
+        String normalizedBusinessName = businessName == null ? "Default Business" : businessName.trim();
+        if (normalizedBusinessName.isBlank()) {
+            normalizedBusinessName = "Default Business";
+        }
+
+        String tenantName = normalizedBusinessName;
+        String tenantCode = buildUniqueTenantCode(tenantName, email);
+
+        Tenant tenant = new Tenant();
+        tenant.setName(tenantName);
+        tenant.setCode(tenantCode);
+        return tenantRepo.save(tenant);
+    }
+
+    private String buildUniqueTenantCode(String businessName, String email) {
+        String base = businessName == null ? "TEN" : businessName.replaceAll("[^A-Za-z0-9]", "");
+        base = base == null || base.isBlank() ? "TEN" : base.toUpperCase();
+
+        String identity = email == null ? String.valueOf(System.currentTimeMillis()) : email.trim();
+        int hash = Math.abs((identity + "-" + businessName).hashCode()) % 9000;
+        int suffix = 1000 + hash;
+
+        String prefix = base.length() > 4 ? base.substring(0, 4) : base;
+        if (prefix.length() < 4) {
+            prefix = (prefix + "TEN").substring(0, 4);
+        }
+
+        return prefix + String.valueOf(suffix).substring(Math.max(0, String.valueOf(suffix).length() - 4));
     }
 }

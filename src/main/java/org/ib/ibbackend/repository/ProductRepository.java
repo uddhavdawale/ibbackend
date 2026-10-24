@@ -19,7 +19,9 @@ public interface ProductRepository extends JpaRepository<Product,Long> {
             String name, String sku, Pageable pageable);
 
     Optional<Product> findBySku(String sku);
+    Optional<Product> findBySkuAndTenantId(String sku, Long tenantId);
     boolean existsBySku(String sku);
+    boolean existsBySkuAndTenantId(String sku, Long tenantId);
 
     Page<Product> findByTenantId(Long tenantId, Pageable pageable);
     Optional<Product> findByIdAndTenantId(Long id, Long tenantId);

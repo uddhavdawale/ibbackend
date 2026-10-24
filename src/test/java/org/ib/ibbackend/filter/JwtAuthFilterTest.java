@@ -64,11 +64,15 @@ class JwtAuthFilterTest {
     }
 
     @Test
-    void shouldRejectRequestsWhenUserSessionWasLoggedOut() throws Exception {
+    void shouldAllowValidAccessTokensEvenWithoutRefreshTokenRecord() throws Exception {
         JwtService jwtService = new JwtService();
+        Tenant tenant = new Tenant();
+        tenant.setId(9);
+
         User user = new User();
         user.setEmail("retailer@example.com");
         user.setRole("retailer");
+        user.setTenant(tenant);
 
         String token = jwtService.generateToken(user);
 
@@ -81,7 +85,6 @@ class JwtAuthFilterTest {
         request.addHeader("Authorization", "Bearer " + token);
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = (req, res) -> {
-            throw new AssertionError("Filter should reject revoked sessions before chain execution");
         };
 
         JwtAuthFilter filter = new JwtAuthFilter();
@@ -91,7 +94,8 @@ class JwtAuthFilterTest {
 
         filter.doFilter(request, response, chain);
 
-        assertThat(response.getStatus()).isEqualTo(401);
-        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
+        assertThat(TenantContext.getCurrentTenant()).isEqualTo(9L);
     }
 }

@@ -25,10 +25,12 @@ public class InventoryController {
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> uploadInventory(
             @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "tenantId", required = false) Long tenantId,
+            @RequestParam(value = "userId", required = false) Long userId,
             @RequestParam(value = "source", required = false) String source,
             @RequestParam(value = "records", required = false) String recordsJson) {
         try {
-            InventoryUploadResult result = inventoryUploadService.processUpload(file, source, recordsJson);
+            InventoryUploadResult result = inventoryUploadService.processUpload(file, source, recordsJson, tenantId, userId);
             return ResponseEntity.ok(Map.of(
                     "success", result.isSuccess(),
                     "message", result.getMessage(),

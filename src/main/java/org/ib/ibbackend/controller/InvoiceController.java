@@ -6,10 +6,12 @@ import org.ib.ibbackend.entity.Invoice;
 import org.ib.ibbackend.entity.InvoiceItem;
 import org.ib.ibbackend.entity.Product;
 import org.ib.ibbackend.entity.Tenant;
+import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.filter.TenantContext;
 import org.ib.ibbackend.repository.InvoiceItemRepository;
 import org.ib.ibbackend.repository.InvoiceRepository;
 import org.ib.ibbackend.repository.ProductRepository;
+import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.service.SequenceService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +21,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
@@ -45,6 +48,10 @@ public class InvoiceController {
 
     @Autowired
     private ProductRepository productRepository;
+
+    @Autowired
+    private UserRepository userRepository;
+
     @Autowired private
     SequenceService seqService;
 
@@ -146,11 +153,31 @@ public class InvoiceController {
         }
 
         Page<Map<String, Object>> summaryPage = invoices.map(invoice -> {
+            hydrateInvoiceOwnership(invoice);
             Map<String, Object> summary = new HashMap<>();
+            BigDecimal totalAmount = invoice.getGrandTotal() != null ? invoice.getGrandTotal() : BigDecimal.ZERO;
+            BigDecimal paidAmount = invoice.getPaidAmount();
+            BigDecimal outstandingAmount = invoice.getOutstandingAmount();
+            Invoice.PaymentStatus paymentStatus = invoice.getPaymentStatus();
+
             summary.put("id", invoice.getId());
-            summary.put("total", invoice.getGrandTotal() != null ? invoice.getGrandTotal() : BigDecimal.ZERO);
-            summary.put("status", normalizeStatus(invoice.getStatus()));
+            summary.put("invoiceNo", invoice.getInvoiceNo());
+            summary.put("date", invoice.getDate());
             summary.put("customerName", invoice.getCustomerName());
+            summary.put("customerPhone", invoice.getCustomerPhone());
+            summary.put("customerEmail", invoice.getCustomerEmail());
+            summary.put("paymentMethod", invoice.getPaymentMethod());
+            summary.put("subtotal", invoice.getSubtotal() != null ? invoice.getSubtotal() : BigDecimal.ZERO);
+            summary.put("gstAmount", invoice.getGstAmount() != null ? invoice.getGstAmount() : BigDecimal.ZERO);
+            summary.put("grandTotal", totalAmount);
+            summary.put("totalAmount", totalAmount);
+            summary.put("paidAmount", paidAmount);
+            summary.put("outstandingAmount", outstandingAmount);
+            summary.put("paymentStatus", paymentStatus.name());
+            summary.put("status", normalizeStatus(invoice.getStatus()));
+            summary.put("tenantId", invoice.getTenantId());
+            summary.put("userId", invoice.getUserId());
+            summary.put("items", invoice.getItems() != null ? invoice.getItems() : List.of());
             summary.put("createdAt", invoice.getDate() != null ? invoice.getDate().atStartOfDay() : null);
             return summary;
         });
@@ -179,8 +206,28 @@ public class InvoiceController {
 
         log.info("Fetching invoice by id={} for tenant={}", id, tenantId);
         return invoiceRepository.findByIdAndTenantId(id, tenantId)
-                .map(ResponseEntity::ok)
+                .map(invoice -> {
+                    hydrateInvoiceOwnership(invoice);
+                    return ResponseEntity.ok(invoice);
+                })
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    private void hydrateInvoiceOwnership(Invoice invoice) {
+        if (invoice == null) {
+            return;
+        }
+        if (invoice.getUserId() == null && userRepository != null) {
+            String email = SecurityContextHolder.getContext().getAuthentication() != null
+                    ? SecurityContextHolder.getContext().getAuthentication().getName()
+                    : null;
+            if (email != null && !email.isBlank()) {
+                userRepository.findByEmail(email).ifPresent(user -> {
+                    invoice.setUserId(user.getId());
+                    invoice.setCustomerEmail(user.getEmail());
+                });
+            }
+        }
     }
 
     @PostMapping
@@ -224,13 +271,38 @@ public class InvoiceController {
                 throw new org.springframework.security.access.AccessDeniedException("Access denied");
             }
 
+            BigDecimal paidAmount = resolvePaidAmount(
+                    grandTotal,
+                    invoiceRequest.getPaidAmount(),
+                    invoiceRequest.getStatus(),
+                    invoiceRequest.getPaymentStatus()
+            );
+
+            String clientStatusSummary = String.format("status=%s, paymentStatus=%s, paidAmount=%s",
+                    invoiceRequest.getStatus(), invoiceRequest.getPaymentStatus(), invoiceRequest.getPaidAmount());
+            log.info("Checkout payment intent for tenant {}: {}", tenantId, clientStatusSummary);
+
             Invoice invoice = new Invoice(invoiceNo, invoiceRequest.getCustomerName(),
                     invoiceRequest.getCustomerPhone(), LocalDate.now(),
                     invoiceRequest.getPaymentMethod(), subtotal, gstAmount, grandTotal,
                     invoiceItems);
+            invoice.setPaidAmount(paidAmount);
+            invoice.setPaymentStatus(resolvePaymentStatus(paidAmount, grandTotal));
+            invoice.setStatus(resolveInvoiceStatus(invoice.getPaymentStatus()));
             Tenant tenant = new Tenant();
             tenant.setId(Math.toIntExact(tenantId));
             invoice.setTenant(tenant);
+
+            String email = SecurityContextHolder.getContext().getAuthentication() != null
+                    ? SecurityContextHolder.getContext().getAuthentication().getName()
+                    : null;
+            if (email != null && !email.isBlank() && userRepository != null) {
+                User currentUser = userRepository.findByEmail(email).orElse(null);
+                if (currentUser != null) {
+                    invoice.setUserId(currentUser.getId());
+                    invoice.setCustomerEmail(currentUser.getEmail());
+                }
+            }
 
             for (InvoiceItem item : invoiceItems) {
                 item.setInvoice(invoice);
@@ -244,5 +316,70 @@ public class InvoiceController {
             log.error("Error saving invoice", e);
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         }
+    }
+
+    private Invoice.PaymentStatus resolvePaymentStatus(BigDecimal paidAmount, BigDecimal grandTotal) {
+        BigDecimal total = grandTotal == null ? BigDecimal.ZERO : grandTotal;
+        BigDecimal paid = paidAmount == null ? BigDecimal.ZERO : paidAmount.max(BigDecimal.ZERO);
+
+        if (paid.compareTo(total) >= 0 && total.compareTo(BigDecimal.ZERO) > 0) {
+            return Invoice.PaymentStatus.PAID;
+        }
+        if (paid.compareTo(BigDecimal.ZERO) > 0 && paid.compareTo(total) < 0) {
+            return Invoice.PaymentStatus.PARTIAL;
+        }
+        return Invoice.PaymentStatus.PENDING;
+    }
+
+    private BigDecimal resolvePaidAmount(BigDecimal grandTotal, BigDecimal providedAmount, String status, String paymentStatus) {
+        BigDecimal baseAmount = providedAmount == null ? BigDecimal.ZERO : providedAmount.max(BigDecimal.ZERO);
+        String normalizedStatus = normalizePaymentIntent(status, paymentStatus);
+
+        if (normalizedStatus == null) {
+            return baseAmount;
+        }
+
+        if ("PAID".equals(normalizedStatus)) {
+            return grandTotal == null ? baseAmount : grandTotal.max(baseAmount);
+        }
+
+        if ("PENDING".equals(normalizedStatus)) {
+            return BigDecimal.ZERO;
+        }
+
+        if ("PARTIAL".equals(normalizedStatus)) {
+            return grandTotal == null ? baseAmount : baseAmount.min(grandTotal);
+        }
+
+        return baseAmount;
+    }
+
+    private String normalizePaymentIntent(String status, String paymentStatus) {
+        String candidate = status != null ? status : paymentStatus;
+        if (candidate == null || candidate.isBlank()) {
+            return null;
+        }
+        String normalized = candidate.trim().toUpperCase();
+        if ("PAID".equals(normalized) || "SUCCESS".equals(normalized) || "COMPLETED".equals(normalized)) {
+            return "PAID";
+        }
+        if ("PENDING".equals(normalized) || "WAITING".equals(normalized)) {
+            return "PENDING";
+        }
+        if ("PARTIAL".equals(normalized) || "PARTIALLY_PAID".equals(normalized) || "PARTIALLYPAID".equals(normalized)) {
+            return "PARTIAL";
+        }
+        return null;
+    }
+
+    private Invoice.InvoiceStatus resolveInvoiceStatus(Invoice.PaymentStatus paymentStatus) {
+        if (paymentStatus == null) {
+            return Invoice.InvoiceStatus.PENDING;
+        }
+        return switch (paymentStatus) {
+            case PAID -> Invoice.InvoiceStatus.PAID;
+            case CANCELLED -> Invoice.InvoiceStatus.CANCELLED;
+            default -> Invoice.InvoiceStatus.PENDING;
+        };
     }
 }

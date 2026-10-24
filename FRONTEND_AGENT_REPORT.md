@@ -1,159 +1,317 @@
-# Frontend Agent Contract Report
+# Frontend Agent Implementation Report
 
-## Overview
-This document is the frontend source-of-truth contract for the Inventory & Billing backend. It defines the exact API shape expected by the UI for authentication, dashboard metrics, inventory, billing, and GST workflows.
+## Purpose
+This document is the authoritative backend contract for the frontend agent. Use it as the source of truth for API integration, tenant scoping, payment truth, and session handling.
 
-The backend implementation is expected to remain stable across refreshes and to return numeric values, predictable field names, and consistent JSON structures.
+The backend is intentionally strict: the server derives the tenant and user context from the authenticated session and JWT claims. The frontend must not override tenant or user identity on protected requests.
 
 ---
 
-## 1. Authentication Contract
+## 1. Authentication and session rules
 
-### 1.1 Login
+### 1.1 Login endpoint
 - Method: `POST`
-- Path: `/api/login`
+- Path: `/api/auth/login`
 - Request body:
 
 ```json
 {
-  "username": "admin",
-  "password": "base64EncodedPassword",
-  "email": "admin@example.com",
-  "role": "ADMIN"
+  "username": "owner@example.com",
+  "password": "secret"
 }
 ```
 
-Expected behavior:
-- Validate credentials
-- Return an access token for authenticated API usage
-- Return a refresh token, either in JSON or as an HttpOnly cookie
-- Return user metadata including `name`, `email`, and `role`
-
-Recommended response:
+Expected response:
 
 ```json
 {
   "message": "Login successful",
   "accessToken": "jwt.access.token",
   "refreshToken": "rotating.refresh.token",
+  "tokenType": "Bearer",
   "user": {
-    "id": 1,
-    "username": "admin",
-    "name": "Admin User",
-    "email": "admin@example.com",
-    "role": "ADMIN"
+    "id": 12,
+    "username": "Owner",
+    "name": "Owner",
+    "email": "owner@example.com",
+    "role": "STORE_ADMIN",
+    "businessName": "Demo Store",
+    "tenantId": 7
   }
 }
 ```
 
-### 1.2 Refresh token
+Important frontend rules:
+- Store `accessToken` and send it as `Authorization: Bearer <token>`
+- Treat `refreshToken` as a rotating token; do not reuse it after a refresh flow
+- The backend also sets a cookie named `refreshToken` with `HttpOnly` and `Secure`
+- If the refresh flow fails, log the user out immediately and redirect to login
+
+### 1.2 Refresh endpoint
 - Method: `POST`
 - Path: `/api/auth/refresh`
-- Request body:
+- Request payload (body is optional when cookie is used):
 
 ```json
 {
-  "username": "admin",
+  "username": "owner@example.com",
   "refreshToken": "currentRefreshToken"
 }
 ```
 
-Expected behavior:
-- Validate the refresh token
-- Issue a new access token and a new refresh token when rotation is enabled
-- Return `401` when the token is invalid, expired, or reused after rotation
-- Do not retry infinitely after refresh failure; frontend must invalidate session immediately
-
-Recommended response:
+Expected response:
 
 ```json
 {
+  "success": true,
+  "message": "Token refreshed successfully",
   "accessToken": "new.jwt.access.token",
   "refreshToken": "new.rotating.refresh.token",
+  "userName": "Owner",
   "user": {
-    "id": 1,
-    "username": "admin",
-    "name": "Admin User",
-    "email": "admin@example.com",
-    "role": "ADMIN"
+    "id": 12,
+    "username": "Owner",
+    "name": "Owner",
+    "email": "owner@example.com",
+    "role": "STORE_ADMIN",
+    "businessName": "Demo Store",
+    "tenantId": 7
   }
 }
 ```
 
-### 1.3 Logout
+Frontend rules:
+- If refresh returns `401`, clear local auth state and force re-login
+- Do not retry refresh endlessly in a loop
+- Do not send stale or custom tenant IDs during refresh
+
+### 1.3 Logout endpoint
 - Method: `POST`
 - Path: `/api/auth/logout`
-- Expected behavior:
-  - Invalidate the refresh token or revoke active session
-  - Optionally clear cookie storage
-  - Return `200` or `204` on success
 
-### 1.4 Unauthorized handling
-- Any `401 Unauthorized` on a protected endpoint must trigger immediate frontend logout
-- Frontend should show a session expiration toast and redirect to login
-
----
-
-## 2. Dashboard Data Contract
-
-### 2.1 Summary metrics
-The dashboard expects numeric KPI values for primary cards.
+Expected response:
 
 ```json
 {
-  "salesToday": 15420,
-  "pendingPayments": 2500,
+  "success": true,
+  "message": "Logged out successfully"
+}
+```
+
+- Clear local tokens and cookies
+- If the server rejects logout, still clear client-side auth state
+
+### 1.4 Unauthorized behavior
+- Any `401` on a protected API must trigger immediate frontend logout
+- The backend enforces access by tenant and throws `AccessDeniedException` if tenant information is missing or invalid
+
+---
+
+## 2. Tenant scoping requirements
+
+### Core rule
+The backend authoritatively resolves the current tenant from the authenticated JWT and request context. It does not trust client-side `tenantId` values.
+
+Frontend must follow this rule:
+- Never send `tenantId` from the client to override business data
+- Never attempt cross-tenant requests
+- Always rely on the authenticated session and backend-owned tenant context
+
+### Security implication
+This prevents:
+- data leakage across users
+- SKU collisions between distinct shops
+- invoice/product access across tenants
+- SQL injection or unsafe query construction through manipulated tenant values
+
+The backend repositories use parameterized queries with tenant filters such as `tenant.id = :tenantId` and reject mismatched tenant data.
+
+---
+
+## 3. Dashboard contract
+
+### 3.1 Dashboard metrics
+- Method: `GET`
+- Path: `/api/dashboard/metrics`
+- User must be authenticated
+
+Expected response:
+
+```json
+{
+  "salesToday": 1250,
+  "pendingPayments": 750,
   "lowStock": 8,
   "ordersToday": 12
 }
 ```
 
-### 2.2 Sales trend
-- Endpoint: `/api/sales/last-six-months`
+Important notes:
+- Keys are intentionally named exactly as shown above
+- Values are numeric and server-derived
+- `pendingPayments` is the tenant-scoped outstanding amount, not the frontend status field
+
+### 3.2 Dashboard summary alias
 - Method: `GET`
+- Path: `/api/dashboard/summary`
+- Same response body as `/api/dashboard/metrics`
 
-Expected payload:
+---
 
-```json
-[
-  { "month": "Jan", "sales": 4000 },
-  { "month": "Feb", "sales": 3000 },
-  { "month": "Mar", "sales": 2000 },
-  { "month": "Apr", "sales": 2780 },
-  { "month": "May", "sales": 1890 },
-  { "month": "Jun", "sales": 2390 }
-]
-```
+## 4. Shop profile contract
 
-Accepted alternative:
+### New dedicated endpoint
+This is the required endpoint for UI store/business metadata.
+
+- Method: `GET`
+- Path: `/api/shop/me`
+- Also supported: `/api/shop` and `/api/shop/`
+
+Expected response:
 
 ```json
 {
-  "data": [
-    { "month": "Jan", "sales": 4000 },
-    { "month": "Feb", "sales": 3000 }
+  "success": true,
+  "shop": {
+    "id": 12,
+    "tenantId": 7,
+    "tenantCode": "DEMO7",
+    "tenantName": "Demo Store",
+    "businessName": "Demo Store",
+    "shopName": "Demo Store",
+    "displayName": "Demo Store",
+    "ownerName": "Owner",
+    "email": "owner@example.com",
+    "phone": "9876543210",
+    "gstin": "22AAAAA0000A1Z5",
+    "pan": "AAAAA0000A",
+    "role": "STORE_ADMIN",
+    "address": "Main Road",
+    "shopAddress": "Main Road",
+    "city": "Pune",
+    "pincode": "411001"
+  }
+}
+```
+
+Frontend guidance:
+- Use this endpoint for store branding, invoice header, PDF company details, and app shop metadata
+- Do not mix shop metadata into general user profile payloads
+- This endpoint is tenant-aware and must reflect the signed-in business only
+
+---
+
+## 5. Invoice contract
+
+### 5.1 Invoice list
+- Method: `GET`
+- Path: `/api/invoices`
+- Query params: `page`, `size`, `search`, `status`
+
+Example response:
+
+```json
+{
+  "content": [
+    {
+      "id": 101,
+      "invoiceNo": "INV-2026/0001",
+      "date": "2026-10-24",
+      "customerName": "Walk-in Customer",
+      "customerPhone": "0000000000",
+      "customerEmail": "customer@example.com",
+      "paymentMethod": "UPI",
+      "subtotal": 95,
+      "gstAmount": 10,
+      "grandTotal": 105,
+      "totalAmount": 105,
+      "paidAmount": 105,
+      "outstandingAmount": 0,
+      "paymentStatus": "PAID",
+      "status": "Paid",
+      "tenantId": 7,
+      "userId": 12,
+      "items": []
+    }
+  ],
+  "pageable": {},
+  "totalPages": 1,
+  "totalElements": 1,
+  "last": true,
+  "first": true,
+  "number": 0,
+  "size": 10
+}
+```
+
+### 5.2 Critical payment rule
+The frontend must not trust a client-provided `status` or `paymentStatus` as the source of truth for invoice payment state.
+
+The backend calculates the canonical state using real amounts:
+- if `paidAmount >= grandTotal` => `PAID`
+- if `0 < paidAmount < grandTotal` => `PARTIAL`
+- otherwise => `PENDING`
+
+Then the backend maps that to invoice status and stores the result on the server.
+
+Frontend behavior:
+- Treat `status` and `paymentStatus` from the backend as authoritative
+- Do not override these values in the UI based on stale frontend state
+- Do not show a sale as “pending” if the backend already marked it as paid
+
+### 5.3 Invoice creation contract
+- Method: `POST`
+- Path: `/api/invoices`
+
+Request example:
+
+```json
+{
+  "customerName": "Walk-in Customer",
+  "customerPhone": "0000000000",
+  "paymentMethod": "UPI",
+  "status": "PAID",
+  "paidAmount": 50,
+  "items": [
+    {
+      "productId": 10,
+      "name": "Notebook",
+      "sku": "NOTEBOOK-007",
+      "hsn": "9983",
+      "gstRate": 5,
+      "price": 100,
+      "qty": 1
+    }
   ]
 }
 ```
 
-Notes:
-- Sort in ascending month order
-- Keep values numeric
-- Keep names short and chart-friendly
+Server response example:
+- The backend ignores the client status as a source of truth
+- It recalculates `paidAmount` and `paymentStatus` based on the real grand total and payment amount
+
+Example saved values:
+
+```json
+{
+  "paidAmount": 105,
+  "paymentStatus": "PAID",
+  "status": "Paid"
+}
+```
+
+This behavior is required to prevent pending status being stored incorrectly when the user has already paid.
 
 ---
 
-## 3. Inventory Contract
+## 6. Product and inventory rules
 
-### 3.1 Product listing
-- Endpoint: `/api/products`
+### Product listing
 - Method: `GET`
-- Query parameters:
-  - `page` (0-based index)
-  - `size` (page size, e.g. 10 or 20)
-  - optional `search`
+- Path: `/api/products`
+- Returns tenant-scoped product data only
 
-Expected response:
+Expected page response:
 
 ```json
 {
@@ -165,8 +323,7 @@ Expected response:
       "quantity": 10,
       "minStock": 20,
       "price": 299,
-      "category": "Electronics",
-      "createdAt": "2026-01-01T00:00:00Z"
+      "category": "Electronics"
     }
   ],
   "totalPages": 5,
@@ -176,154 +333,73 @@ Expected response:
 }
 ```
 
-### 3.2 Product mutation endpoints
-- `POST /api/products` create
-- `PUT /api/products/{id}` update
-- `DELETE /api/products/{id}` delete
-
-Expected fields on create/update:
-
-```json
-{
-  "name": "Product A",
-  "sku": "SKU-01",
-  "quantity": 10,
-  "minStock": 20,
-  "price": 299,
-  "category": "Electronics"
-}
-```
-
-Notes:
-- Low-stock logic is based on `quantity < minStock`
-- Frontend displays quantity, minimum stock, price, and category
+### Important rules
+- Product duplicate checks are tenant-scoped
+- SKU uniqueness is enforced within the current tenant only
+- Data must never be shared across tenants
+- Use tenant context from backend, not request payloads
 
 ---
 
-## 4. Billing Contract
+## 7. Security and hardening requirements
 
-### 4.1 Invoice list
-- Endpoint: `/api/invoices`
-- Method: `GET`
-- Query parameters:
-  - `page`
-  - `size`
-  - optional `status`
+### Must be enforced by frontend
+- Use secure tokens only; do not store raw refresh tokens in localStorage if avoidable
+- Treat all response data as tenant-scoped and user-scoped
+- If a request fails with `401`, log the user out immediately
+- Prevent user/tenant ID tampering via request payloads
 
-Expected response:
+### Backend security guarantees
+The application enforces: 
+- JWT-based authentication
+- refresh token rotation and revocation
+- tenant-based repository filtering
+- server-side validation of invoice payment state
+- SQL parameterization and no unsafe string concatenation for tenant or product filters
 
-```json
-{
-  "content": [
-    {
-      "id": 101,
-      "total": 5200,
-      "status": "Paid",
-      "customerName": "Retailer",
-      "createdAt": "2026-01-01T00:00:00Z"
-    }
-  ],
-  "totalPages": 3,
-  "number": 0
-}
-```
-
-Frontend requirements:
-- invoice list must include at least `id`, `total`, `status`, `customerName`, and `createdAt`
-- payment states should align with `Paid`, `Pending`, `Overdue`, or equivalent statuses
+### SQL injection protection
+The backend is protected by parameterized JPA queries and tenant-specific repository methods. The frontend should never rely on direct raw SQL or custom query strings. If the frontend sends untrusted identifiers, the backend rejects them and the API fails safely.
 
 ---
 
-## 5. GST Contract
+## 8. MFA and login flow notes
 
-### 5.1 GST summary
-- Endpoint: `/api/gst/summary`
-- Method: `GET`
+The backend supports optional mail-based MFA:
+- login may require MFA before issuing access tokens
+- `POST /api/mfa/send-otp` and `POST /api/mfa/verify-otp` are the relevant endpoints
 
-Expected response:
-
-```json
-{
-  "period": "2026-10",
-  "totalSales": 125000,
-  "taxCollected": 15000,
-  "returnsFiled": 2,
-  "pendingFiling": 1
-}
-```
-
-### 5.2 GST filings
-- Endpoint: `/api/gst/filings`
-- Method: `GET`
-
-Expected response:
-
-```json
-[
-  {
-    "id": 1,
-    "month": "2026-10",
-    "status": "Filed",
-    "amount": 15000,
-    "submittedAt": "2026-10-15T00:00:00Z"
-  }
-]
-```
+Frontend guidance:
+- If login response indicates MFA is required, move to the OTP step instead of continuing the normal dashboard flow
+- Keep MFA steps separate from normal login state
+- Do not disable or bypass the MFA challenge when the backend has it enabled
 
 ---
 
-## 6. Backend Task Checklist
+## 9. Required frontend expectations
 
-### Must implement
-- [x] `POST /api/login` returning access + refresh token and user metadata
-- [x] `POST /api/auth/refresh` with rotation and invalidation rules
-- [x] `POST /api/auth/logout` to revoke refresh token/session
-- [x] `GET /api/products` paginated response with `content` and pagination metadata
-- [x] `GET /api/sales/last-six-months` returning monthly sales series
-- [x] `GET /api/invoices` returning invoice list with status and total
-- [x] `GET /api/gst/summary` returning GST KPI values
-- [x] `GET /api/gst/filings` returning filing list
-- [x] `401` handling and session invalidation on expired tokens
-
-### Should implement
-- [ ] consistent JSON response envelope for all endpoints
-- [ ] validation errors with explicit message fields
-- [ ] audit timestamps for created/updated records
-- [ ] secure HttpOnly refresh token cookies when applicable
-
-### Production readiness requirements
-- [ ] use HTTPS in production
-- [ ] protect refresh token rotation and invalidation
-- [ ] send `Authorization: Bearer <token>` for protected requests
-- [ ] avoid silent retry loops when refresh fails
-- [ ] return stable field names to match frontend expectations
+The frontend agent should:
+1. Use `/api/auth/login` and `/api/auth/refresh` for auth flows
+2. Use `/api/shop/me` for business/store metadata
+3. Use `/api/dashboard/metrics` for dashboard KPI values
+4. Use `/api/invoices` for invoice lists and invoice truth
+5. Use backend invoice `paidAmount`, `paymentStatus`, and `status` values as the single source of truth
+6. Never trust client-side `tenantId`, `userId`, or invoice status overrides
+7. Treat the server as the final authority over identity, tenant scope, and payment state
 
 ---
 
-## 7. Frontend Contract Expectations
+## 10. Acceptance checklist
 
-The frontend expects the backend to remain consistent with the following general contract:
-- JSON payloads are returned as readable objects and arrays, not only wrapped strings
-- Numeric values remain numeric whenever possible
-- Field names are stable and should not change between UI refreshes without coordinated changes
-- Refresh flow must be safe: if token refresh cannot succeed, the frontend logs the user out immediately
-
----
-
-## 8. Acceptance Criteria
-The backend is considered ready when:
-1. Login returns valid access and refresh tokens
-2. Refresh token rotation works reliably and fails with `401` when invalid
-3. Dashboard widgets render from backend values instead of static mock data
-4. Inventory list supports pagination and stock detection
-5. Billing data exposes totals and payment state
-6. GST summary and filings render correctly in the UI
-7. Authentication failures result in immediate logout and redirect to login
+- [x] login returns access and refresh token
+- [x] refresh token rotation is implemented and enforced
+- [x] tenant is assigned uniquely per user/store
+- [x] user data is scoped to the current tenant
+- [x] /api/shop/me returns dedicated shop metadata
+- [x] invoice payment status is derived from backend-calculated real amounts
+- [x] frontend is expected to log out on any 401 response
+- [x] product and invoice access are tenant-isolated
 
 ---
 
-## 9. Frontend Implementation Notes
-- Treat this document as the API contract source-of-truth
-- Any response shape mismatch should be resolved in coordination with the backend team before UI changes are merged
-- Prefer resilient parsing for optional fields but maintain the expected contract for required fields
-- Session expiration flows should be handled uniformly across dashboard and protected pages
+## 11. Implementation note
+Use this file as the contract for frontend-screen implementation. If a frontend change depends on a field that is not listed here, it should be validated with the backend before merging. The backend is authoritative for all tenant, identity, payment, and access-control logic.

@@ -16,6 +16,10 @@ public class Invoice {
         PENDING, PAID, CANCELLED
     }
 
+    public enum PaymentStatus {
+        PENDING, PARTIAL, PAID, CANCELLED
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -32,6 +36,13 @@ public class Invoice {
     private BigDecimal gstAmount;
     private BigDecimal grandTotal;
 
+    @Column(nullable = false)
+    private BigDecimal paidAmount = BigDecimal.ZERO;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private PaymentStatus paymentStatus = PaymentStatus.PENDING;
+
     @OneToMany(mappedBy = "invoice", cascade = CascadeType.ALL, fetch = FetchType.EAGER, orphanRemoval = true)
     @JsonManagedReference
     private List<InvoiceItem> items;
@@ -40,9 +51,29 @@ public class Invoice {
     @Column(nullable = false)
     private InvoiceStatus status = InvoiceStatus.PENDING;
 
+    @PrePersist
+    @PreUpdate
+    private void normalizePaymentDefaults() {
+        if (this.paidAmount == null) {
+            this.paidAmount = BigDecimal.ZERO;
+        }
+        if (this.paymentStatus == null) {
+            this.paymentStatus = PaymentStatus.PENDING;
+        }
+        if (this.status == null) {
+            this.status = InvoiceStatus.PENDING;
+        }
+    }
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "tenant_id")
     private Tenant tenant;
+
+    @Transient
+    private Long userId;
+
+    @Transient
+    private String customerEmail;
 
     // Constructors
     public Invoice() {}
@@ -89,11 +120,52 @@ public class Invoice {
     public BigDecimal getGrandTotal() { return grandTotal; }
     public void setGrandTotal(BigDecimal grandTotal) { this.grandTotal = grandTotal; }
 
+    public BigDecimal getPaidAmount() { return paidAmount == null ? BigDecimal.ZERO : paidAmount; }
+    public void setPaidAmount(BigDecimal paidAmount) { this.paidAmount = paidAmount == null ? BigDecimal.ZERO : paidAmount; }
+
+    public PaymentStatus getPaymentStatus() {
+        if (status == InvoiceStatus.CANCELLED) {
+            return PaymentStatus.CANCELLED;
+        }
+
+        BigDecimal total = grandTotal == null ? BigDecimal.ZERO : grandTotal;
+        BigDecimal paid = getPaidAmount();
+
+        if (paid.compareTo(total) >= 0 && total.compareTo(BigDecimal.ZERO) > 0) {
+            return PaymentStatus.PAID;
+        }
+        if (paid.compareTo(BigDecimal.ZERO) > 0 && paid.compareTo(total) < 0) {
+            return PaymentStatus.PARTIAL;
+        }
+        return PaymentStatus.PENDING;
+    }
+
+    public void setPaymentStatus(PaymentStatus paymentStatus) { this.paymentStatus = paymentStatus == null ? PaymentStatus.PENDING : paymentStatus; }
+
+    public BigDecimal getOutstandingAmount() {
+        BigDecimal total = grandTotal == null ? BigDecimal.ZERO : grandTotal;
+        return total.subtract(getPaidAmount()).max(BigDecimal.ZERO);
+    }
+
+    public BigDecimal getTotalAmount() {
+        return grandTotal == null ? BigDecimal.ZERO : grandTotal;
+    }
+
+    public Integer getTenantId() {
+        return tenant != null ? tenant.getId() : null;
+    }
+
+    public Long getUserId() { return userId; }
+    public void setUserId(Long userId) { this.userId = userId; }
+
+    public String getCustomerEmail() { return customerEmail; }
+    public void setCustomerEmail(String customerEmail) { this.customerEmail = customerEmail; }
+
     public List<InvoiceItem> getItems() { return items; }
     public void setItems(List<InvoiceItem> items) { this.items = items; }
 
-    public InvoiceStatus getStatus() { return status; }
-    public void setStatus(InvoiceStatus status) { this.status = status; }
+    public InvoiceStatus getStatus() { return status == null ? InvoiceStatus.PENDING : status; }
+    public void setStatus(InvoiceStatus status) { this.status = status == null ? InvoiceStatus.PENDING : status; }
     public Tenant getTenant() { return tenant; }
     public void setTenant(Tenant tenant) { this.tenant = tenant; }
 
