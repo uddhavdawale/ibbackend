@@ -13,6 +13,7 @@ public class LoginResponse {
     private String email;
     private String refreshToken;
     private Object user;
+    private boolean requiresMfa;
 
     public String getRefreshToken() {
         return refreshToken;
@@ -53,4 +54,7 @@ public class LoginResponse {
 
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
+
+    public boolean isRequiresMfa() { return requiresMfa; }
+    public void setRequiresMfa(boolean requiresMfa) { this.requiresMfa = requiresMfa; }
 }

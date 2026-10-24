@@ -34,6 +34,9 @@ class FrontendContractContractTest {
         assertThat(body.get("pendingPayments")).isInstanceOf(Number.class);
         assertThat(body.get("lowStock")).isInstanceOf(Number.class);
         assertThat(body.get("ordersToday")).isInstanceOf(Number.class);
+
+        ResponseEntity<Map<String, Object>> summaryResponse = controller.getDashboardSummary();
+        assertThat(summaryResponse.getBody()).containsKeys("salesToday", "pendingPayments", "lowStock", "ordersToday");
     }
 
     @Test

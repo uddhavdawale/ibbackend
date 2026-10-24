@@ -10,12 +10,17 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface ProductRepository extends JpaRepository<Product,Long> {
     Page<Product> findAll(Pageable pageable);
     Page<Product> findByNameContainingIgnoreCaseOrSkuContainingIgnoreCase(
             String name, String sku, Pageable pageable);
+
+    Optional<Product> findBySku(String sku);
+    boolean existsBySku(String sku);
+
     // Count low stock items (qty < minStock)
     @Query("SELECT COUNT(p) FROM Product p WHERE p.quantity < p.minStock")
     long countLowStockItems();

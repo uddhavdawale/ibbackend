@@ -30,6 +30,11 @@ public class DashBoardAPI {
     @Autowired
     private InvoiceRepository invoiceRepo;
 
+    @GetMapping(value = {"", "/", "/summary"})
+    public ResponseEntity<Map<String, Object>> getDashboardSummary() {
+        return getDashboardMetrics();
+    }
+
     @GetMapping("/metrics")
     public ResponseEntity<Map<String, Object>> getDashboardMetrics() {
         log.info("Fetching dashboard metrics");

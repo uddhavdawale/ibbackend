@@ -6,6 +6,7 @@ import org.ib.ibbackend.dto.LoginResponse;
 import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.service.JwtService;
+import org.ib.ibbackend.service.MailMfaService;
 import org.ib.ibbackend.service.RefreshTokenService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -35,6 +36,9 @@ public class LoginController {
     @Autowired
     private RefreshTokenService refreshTokenService;
 
+    @Autowired
+    private MailMfaService mailMfaService;
+
     @PostMapping(path = {"/api/login", "/login"})
     public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) {
         Optional<User> userOpt = findUserByLoginIdentifier(request.getUsername());
@@ -49,6 +53,23 @@ public class LoginController {
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(new LoginResponse(false, "Invalid username or password"));
+        }
+
+        if (mailMfaService.isEnabled()) {
+            mailMfaService.issueOtp(user.getEmail());
+            LoginResponse response = new LoginResponse(false, "MFA verification required");
+            response.setRequiresMfa(true);
+            response.setUsername(user.getOwnerName());
+            response.setRole(user.getRole());
+            response.setEmail(user.getEmail());
+            response.setUser(Map.of(
+                    "id", user.getId(),
+                    "username", user.getOwnerName(),
+                    "name", user.getOwnerName(),
+                    "email", user.getEmail(),
+                    "role", user.getRole()
+            ));
+            return ResponseEntity.ok(response);
         }
 
         String accessToken = jwtService.generateAccessToken(user);

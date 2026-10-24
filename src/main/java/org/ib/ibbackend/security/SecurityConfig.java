@@ -44,10 +44,18 @@ public class SecurityConfig {
                                 "/api/auth/signup",
                                 "/api/auth/refresh",
                                 "/api/auth/logout",
+                                "/api/mfa/**",
                                 "/api/signup",
                                 "/api/register",
                                 "/api/products",
                                 "/api/products/**",
+                                "/api/dashboard",
+                                "/api/dashboard/**",
+                                "/api/sales/**",
+                                "/api/invoices",
+                                "/api/invoices/**",
+                                "/api/gst",
+                                "/api/gst/**",
                                 "/error"
                         ).permitAll()
                         .anyRequest().authenticated()
