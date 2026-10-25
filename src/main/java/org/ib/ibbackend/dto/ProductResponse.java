@@ -7,14 +7,19 @@ public record ProductResponse(
         Long id,
         String name,
         String sku,
+        String hsn,
         Integer quantity,
         Integer minStock,
         BigDecimal price,
+        BigDecimal mrp,
+        Integer set,
+        String poNumber,
+        Integer salesCount,
         String category,
         LocalDateTime createdAt,
         Integer tenantId
 ) {
     public ProductResponse(Long id, String name, String sku, BigDecimal price, Integer tenantId) {
-        this(id, name, sku, 0, 0, price, "General", LocalDateTime.now(), tenantId);
+        this(id, name, sku, null, 0, 0, price, price, 1, null, 0, "General", LocalDateTime.now(), tenantId);
     }
 }

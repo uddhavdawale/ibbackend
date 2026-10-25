@@ -153,6 +153,70 @@ GET /api/products
 ### 5.4 Frontend use
 - Fetch and mutate only within the current tenant.
 - Do not filter by arbitrary user id or raw tenant id from the client.
+- SKU uniqueness is now tenant-scoped: the same SKU may exist in different tenants.
+- Handle duplicate SKU in same tenant as conflict:
+  - POST /api/products returns 409 when SKU already exists for that tenant.
+  - PUT /api/products/{id} returns 409 when changing SKU to one already used by another product in that tenant.
+
+---
+
+## 5A. Inventory bulk upload contract
+
+### 5A.1 Endpoint
+POST /api/inventory/upload (multipart/form-data)
+
+### 5A.2 Request fields
+- file: CSV/XLS/XLSX inventory file
+- source: optional client source label
+- records: optional JSON payload mode (if file is not sent)
+- tenantId: optional, but must match authenticated tenant when provided
+- userId: optional, but must match authenticated user when provided
+
+Supported bulk upload template headers (new flow):
+- Item
+- HSN/SAC
+- MRP/ Item
+- QTY
+- Set
+- Price/QTY
+- PO Number
+- Min Stock
+- Category
+
+Backend mapping for this template:
+- Item -> product
+- SKU -> uses provided SKU or defaults to HSN/SAC when SKU is absent
+- HSN/SAC -> required; persisted as hsnSac
+- QTY -> qty
+- Set -> set (defaults to 1 when empty)
+- Min Stock -> minStock (defaults to 0 when empty)
+- Price/QTY -> pricePerQty and selling price (primary)
+- MRP/ Item -> mrp (required) and selling price fallback when Price/QTY is empty
+- PO Number -> poNumber
+- Category -> category (defaults to General when empty)
+
+### 5A.3 Tenant behavior
+- Backend resolves tenant from JWT/TenantContext.
+- Uploaded rows are applied only to the authenticated tenant.
+- Same SKU in same tenant is treated as update (not validation failure).
+- Same SKU across different tenants is allowed and treated independently.
+
+### 5A.4 Response shape
+```json
+{
+  "success": true,
+  "message": "Inventory uploaded successfully",
+  "created": 2,
+  "updated": 3,
+  "skipped": 1,
+  "records": []
+}
+```
+
+### 5A.5 Frontend rule
+- Do not rely on manually switching tenantId in upload requests.
+- Show server counts (created/updated/skipped) as final truth.
+- Treat upload errors as validation/security failures and display backend message directly.
 
 ---
 
@@ -252,5 +316,7 @@ The most important rule is:
 - Hydrate user from /api/users/me
 - Load dashboard stats from /api/dashboard/metrics and /api/dashboard/stats
 - Load products from /api/products and invoices from /api/invoices
+- Handle 409 conflicts from product create/update for same-tenant duplicate SKU
+- Use /api/inventory/upload for tenant-scoped bulk inventory create/update
 - Render payment using paymentStatus, paidAmount, totalAmount, outstandingAmount
 - Never rely on stale or locally computed payment status

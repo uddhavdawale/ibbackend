@@ -123,14 +123,18 @@ public class InventoryUploadService {
             Product product = existingProduct != null ? existingProduct : new Product();
             product.setName(row.getProduct().trim());
             product.setSku(sku);
+            product.setHsnSac(normalizeText(row.getHsnSac()));
             product.setQuantity(row.getQty());
             product.setMinStock(row.getMinStock());
             product.setPrice(row.getPrice());
+            product.setMrp(row.getMrp());
+            product.setSetSize(row.getSet());
+            product.setPoNumber(normalizeText(row.getPoNumber()));
             product.setCategory(row.getCategory());
-            if (authenticatedUser != null && authenticatedUser.getTenant() != null) {
-                if (product.getTenant() == null || !Objects.equals(Long.valueOf(product.getTenant().getId()), Long.valueOf(authenticatedUser.getTenant().getId()))) {
-                    product.setTenant(authenticatedUser.getTenant());
-                }
+            if (resolvedTenantId != null) {
+                product.setTenant(toTenantReference(resolvedTenantId));
+            } else if (authenticatedUser != null && authenticatedUser.getTenant() != null) {
+                product.setTenant(authenticatedUser.getTenant());
             }
 
             Product saved = productRepository.save(product);
@@ -150,6 +154,11 @@ public class InventoryUploadService {
             recordMap.put("qty", saved.getQuantity());
             recordMap.put("minStock", saved.getMinStock());
             recordMap.put("price", saved.getPrice());
+            recordMap.put("mrp", saved.getMrp());
+            recordMap.put("set", saved.getSetSize());
+            recordMap.put("poNumber", saved.getPoNumber());
+            recordMap.put("hsnSac", saved.getHsnSac());
+            recordMap.put("pricePerQty", row.getPricePerQty() != null ? row.getPricePerQty() : saved.getPrice());
             recordMap.put("category", saved.getCategory());
             savedRecords.add(recordMap);
         }
@@ -288,12 +297,34 @@ public class InventoryUploadService {
                 }
 
                 InventoryUploadRow row = new InventoryUploadRow();
-                row.setProduct(getCellValue(nextLine, headerMap, "product"));
-                row.setSku(getCellValue(nextLine, headerMap, "sku"));
+                String product = getCellValue(nextLine, headerMap, "product");
+                String sku = getCellValue(nextLine, headerMap, "sku");
+                String hsnSac = getCellValue(nextLine, headerMap, "hsnsac");
+                String poNumber = getCellValue(nextLine, headerMap, "ponumber");
+
+                row.setProduct(product);
+                row.setHsnSac(hsnSac);
+                row.setPoNumber(poNumber);
+                row.setSku(deriveSku(sku, product, hsnSac, poNumber));
                 row.setQty(parseInteger(getCellValue(nextLine, headerMap, "qty"), "Qty"));
                 row.setMinStock(parseInteger(getCellValue(nextLine, headerMap, "minstock"), "Min Stock"));
-                row.setPrice(parseBigDecimal(getCellValue(nextLine, headerMap, "price"), "Price"));
-                row.setCategory(getCellValue(nextLine, headerMap, "category"));
+                row.setSet(parseInteger(getCellValue(nextLine, headerMap, "set"), "Set"));
+
+                BigDecimal mrp = parseBigDecimal(getCellValue(nextLine, headerMap, "mrpitem"), "MRP/ Item");
+                BigDecimal pricePerQty = parseBigDecimal(getCellValue(nextLine, headerMap, "price"), "Price/QTY");
+                row.setMrp(mrp);
+                row.setPricePerQty(pricePerQty);
+                row.setPrice(pricePerQty != null ? pricePerQty : mrp);
+
+                String category = getCellValue(nextLine, headerMap, "category");
+                row.setCategory(category);
+
+                if (row.getMinStock() == null) {
+                    row.setMinStock(0);
+                }
+                if (row.getSet() == null) {
+                    row.setSet(1);
+                }
                 rows.add(row);
             }
         }
@@ -328,12 +359,34 @@ public class InventoryUploadService {
                 }
 
                 InventoryUploadRow uploadRow = new InventoryUploadRow();
-                uploadRow.setProduct(getCellValue(row, headerMap, "product"));
-                uploadRow.setSku(getCellValue(row, headerMap, "sku"));
+                String product = getCellValue(row, headerMap, "product");
+                String sku = getCellValue(row, headerMap, "sku");
+                String hsnSac = getCellValue(row, headerMap, "hsnsac");
+                String poNumber = getCellValue(row, headerMap, "ponumber");
+
+                uploadRow.setProduct(product);
+                uploadRow.setHsnSac(hsnSac);
+                uploadRow.setPoNumber(poNumber);
+                uploadRow.setSku(deriveSku(sku, product, hsnSac, poNumber));
                 uploadRow.setQty(parseInteger(getCellValue(row, headerMap, "qty"), "Qty"));
                 uploadRow.setMinStock(parseInteger(getCellValue(row, headerMap, "minstock"), "Min Stock"));
-                uploadRow.setPrice(parseBigDecimal(getCellValue(row, headerMap, "price"), "Price"));
-                uploadRow.setCategory(getCellValue(row, headerMap, "category"));
+                uploadRow.setSet(parseInteger(getCellValue(row, headerMap, "set"), "Set"));
+
+                BigDecimal mrp = parseBigDecimal(getCellValue(row, headerMap, "mrpitem"), "MRP/ Item");
+                BigDecimal pricePerQty = parseBigDecimal(getCellValue(row, headerMap, "price"), "Price/QTY");
+                uploadRow.setMrp(mrp);
+                uploadRow.setPricePerQty(pricePerQty);
+                uploadRow.setPrice(pricePerQty != null ? pricePerQty : mrp);
+
+                String category = getCellValue(row, headerMap, "category");
+                uploadRow.setCategory(category);
+
+                if (uploadRow.getMinStock() == null) {
+                    uploadRow.setMinStock(0);
+                }
+                if (uploadRow.getSet() == null) {
+                    uploadRow.setSet(1);
+                }
                 rows.add(uploadRow);
             }
         }
@@ -345,13 +398,35 @@ public class InventoryUploadService {
             List<Map<String, Object>> rawRows = objectMapper.readValue(recordsJson, new TypeReference<>() {});
             List<InventoryUploadRow> rows = new ArrayList<>();
             for (Map<String, Object> raw : rawRows) {
+                String product = stringValue(getMappedValue(raw, "product", "item", "name"));
+                String sku = stringValue(getMappedValue(raw, "sku", "product sku"));
+                String hsnSac = stringValue(getMappedValue(raw, "hsn/sac", "hsn sac", "hsn"));
+                String poNumber = stringValue(getMappedValue(raw, "po number", "po", "ponumber"));
+
                 InventoryUploadRow row = new InventoryUploadRow();
-                row.setProduct(stringValue(raw.get("product")));
-                row.setSku(stringValue(raw.get("sku")));
-                row.setQty(integerValue(raw.get("qty")));
-                row.setMinStock(integerValue(raw.get("minStock")));
-                row.setPrice(bigDecimalValue(raw.get("price")));
-                row.setCategory(stringValue(raw.get("category")));
+                row.setProduct(product);
+                row.setHsnSac(hsnSac);
+                row.setPoNumber(poNumber);
+                row.setSku(deriveSku(sku, product, hsnSac, poNumber));
+                row.setQty(integerValue(getMappedValue(raw, "qty", "quantity")));
+                row.setMinStock(integerValue(getMappedValue(raw, "min stock", "minstock")));
+                row.setSet(integerValue(getMappedValue(raw, "set")));
+
+                BigDecimal mrp = bigDecimalValue(getMappedValue(raw, "mrp/ item", "mrp item", "mrp"));
+                BigDecimal pricePerQty = bigDecimalValue(getMappedValue(raw, "price/qty", "price per qty", "price", "unit price"));
+                row.setMrp(mrp);
+                row.setPricePerQty(pricePerQty);
+                row.setPrice(pricePerQty != null ? pricePerQty : mrp);
+
+                String category = stringValue(getMappedValue(raw, "category", "categories"));
+                row.setCategory(category);
+
+                if (row.getMinStock() == null) {
+                    row.setMinStock(0);
+                }
+                if (row.getSet() == null) {
+                    row.setSet(1);
+                }
                 rows.add(row);
             }
             return rows;
@@ -362,11 +437,11 @@ public class InventoryUploadService {
 
     private void validateHeaders(Map<String, Integer> headerMap) {
         List<String> missing = new ArrayList<>();
-        if (!headerMap.containsKey("product")) missing.add("Product");
-        if (!headerMap.containsKey("sku")) missing.add("SKU");
-        if (!headerMap.containsKey("qty")) missing.add("Qty");
+        if (!headerMap.containsKey("product")) missing.add("Item");
+        if (!headerMap.containsKey("hsnsac")) missing.add("HSN/SAC");
+        if (!headerMap.containsKey("mrpitem")) missing.add("MRP/ Item");
+        if (!headerMap.containsKey("qty")) missing.add("QTY");
         if (!headerMap.containsKey("minstock")) missing.add("Min Stock");
-        if (!headerMap.containsKey("price")) missing.add("Price");
         if (!missing.isEmpty()) throw new ValidationException("Missing required columns: " + String.join(", ", missing));
     }
 
@@ -377,9 +452,15 @@ public class InventoryUploadService {
         }
 
         if (row.getProduct() == null || row.getProduct().isBlank()) {
-            errors.add("Column Product is required");
+            errors.add("Column Item is required");
         } else if (row.getProduct().trim().length() > 200) {
             errors.add("Product name is too long");
+        }
+
+        if (row.getHsnSac() == null || row.getHsnSac().isBlank()) {
+            errors.add("Column HSN/SAC is required");
+        } else if (normalizeText(row.getHsnSac()).length() > 100) {
+            errors.add("HSN/SAC is too long");
         }
 
         if (row.getSku() == null || row.getSku().isBlank()) {
@@ -390,12 +471,6 @@ public class InventoryUploadService {
                 errors.add("SKU is too long");
             }
 
-            boolean skuExistsForCurrentTenant = currentTenantId != null
-                    ? productRepository.existsBySkuAndTenantId(normalizedSku, currentTenantId)
-                    : productRepository.existsBySku(normalizedSku);
-            if (skuExistsForCurrentTenant) {
-                errors.add("SKU " + row.getSku() + " already exists");
-            }
         }
 
         if (row.getQty() == null || row.getQty() < 0) {
@@ -406,8 +481,20 @@ public class InventoryUploadService {
             errors.add("Min Stock must be a non-negative number");
         }
 
+        if (row.getMrp() == null || row.getMrp().compareTo(BigDecimal.ZERO) <= 0) {
+            errors.add("MRP/ Item must be a positive number");
+        }
+
+        if (row.getPricePerQty() != null && row.getPricePerQty().compareTo(BigDecimal.ZERO) <= 0) {
+            errors.add("Price/QTY must be a positive number");
+        }
+
         if (row.getPrice() == null || row.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
             errors.add("Price must be a positive number");
+        }
+
+        if (row.getSet() == null || row.getSet() <= 0) {
+            errors.add("Set must be a positive number");
         }
 
         if (row.getCategory() == null || row.getCategory().isBlank()) {
@@ -445,10 +532,17 @@ public class InventoryUploadService {
         }
         String normalized = value.trim().replaceAll("[^a-zA-Z0-9]", "").toLowerCase(Locale.ROOT);
         if (normalized.equals("name")) return "product";
+        if (normalized.equals("item")) return "product";
         if (normalized.equals("productsku")) return "sku";
+        if (normalized.equals("hsnsac")) return "hsnsac";
         if (normalized.equals("quantity")) return "qty";
+        if (normalized.equals("set")) return "set";
         if (normalized.equals("minstock")) return "minstock";
+        if (normalized.equals("mrpitem")) return "mrpitem";
+        if (normalized.equals("mrp")) return "mrpitem";
+        if (normalized.equals("priceqty")) return "price";
         if (normalized.equals("unitprice")) return "price";
+        if (normalized.equals("ponumber")) return "ponumber";
         if (normalized.equals("categories")) return "category";
         return normalized;
     }
@@ -508,8 +602,9 @@ public class InventoryUploadService {
             return null;
         }
         try {
-            return Integer.parseInt(rawValue.replaceAll(",", "").trim());
-        } catch (NumberFormatException ex) {
+            BigDecimal decimal = new BigDecimal(rawValue.replaceAll(",", "").trim());
+            return decimal.intValueExact();
+        } catch (NumberFormatException | ArithmeticException ex) {
             throw new ValidationException(fieldName + " must be a valid integer");
         }
     }
@@ -527,6 +622,62 @@ public class InventoryUploadService {
 
     private String normalizeText(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private String deriveSku(String sku, String product, String hsnSac, String poNumber) {
+        String normalizedSku = normalizeText(sku);
+        if (!normalizedSku.isBlank()) {
+            return normalizedSku;
+        }
+
+        String normalizedHsn = normalizeText(hsnSac);
+        if (!normalizedHsn.isBlank()) {
+            return normalizedHsn;
+        }
+
+        String normalizedProduct = normalizeText(product);
+        if (!normalizedProduct.isBlank()) {
+            return normalizedProduct.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]+", "-").replaceAll("(^-|-$)", "");
+        }
+
+        String normalizedPoNumber = normalizeText(poNumber);
+        if (!normalizedPoNumber.isBlank()) {
+            return normalizedPoNumber;
+        }
+
+        return "";
+    }
+
+    private Object getMappedValue(Map<String, Object> raw, String... keys) {
+        if (raw == null || raw.isEmpty() || keys == null || keys.length == 0) {
+            return null;
+        }
+
+        for (String key : keys) {
+            if (raw.containsKey(key)) {
+                return raw.get(key);
+            }
+        }
+
+        Map<String, Object> normalized = new HashMap<>();
+        for (Map.Entry<String, Object> entry : raw.entrySet()) {
+            normalized.put(normalizeHeader(entry.getKey()), entry.getValue());
+        }
+
+        for (String key : keys) {
+            Object value = normalized.get(normalizeHeader(key));
+            if (value != null) {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
+    private Tenant toTenantReference(Long tenantId) {
+        Tenant tenant = new Tenant();
+        tenant.setId(Math.toIntExact(tenantId));
+        return tenant;
     }
 
     private String stringValue(Object value) {

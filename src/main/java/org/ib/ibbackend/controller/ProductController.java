@@ -16,8 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.access.AccessDeniedException;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.util.Map;
 
 @RestController
 @CrossOrigin(originPatterns  = "*")
@@ -66,9 +65,14 @@ public class ProductController {
                 product.getId(),
                 product.getName(),
                 product.getSku(),
+            product.getHsnSac(),
                 product.getQuantity(),
                 product.getMinStock(),
                 product.getPrice(),
+            product.getMrp() != null ? product.getMrp() : product.getPrice(),
+            product.getSetSize() != null ? product.getSetSize() : 1,
+            product.getPoNumber(),
+            product.getSalesCount() != null ? product.getSalesCount() : 0,
                 product.getCategory(),
                 product.getCreatedAt(),
                 tenantId
@@ -81,12 +85,40 @@ public class ProductController {
             throw new AccessDeniedException("Access denied");
         }
 
+        String resolvedCode = resolveCatalogCode(product);
+        if (resolvedCode == null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", "HSN/SAC is required"
+            ));
+        }
+        product.setSku(resolvedCode);
+        if (normalizeSku(product.getHsnSac()) == null) {
+            product.setHsnSac(resolvedCode);
+        }
+
+        if (productRepository.existsBySkuAndTenantId(resolvedCode, tenantId)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "success", false,
+                    "message", "HSN/SAC already exists for this tenant"
+            ));
+        }
+
         Tenant tenant = new Tenant();
         tenant.setId(Math.toIntExact(tenantId));
         product.setTenant(tenant);
 
         if (product.getCategory() == null || product.getCategory().isBlank()) {
             product.setCategory("General");
+        }
+        if (product.getMrp() == null) {
+            product.setMrp(product.getPrice());
+        }
+        if (product.getSetSize() == null || product.getSetSize() <= 0) {
+            product.setSetSize(1);
+        }
+        if (product.getSalesCount() == null || product.getSalesCount() < 0) {
+            product.setSalesCount(0);
         }
 
         Product savedProduct = productRepository.save(product);
@@ -100,18 +132,50 @@ public class ProductController {
             throw new AccessDeniedException("Access denied");
         }
 
+        String resolvedCode = resolveCatalogCode(product);
+        if (resolvedCode == null) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        if (productRepository.existsBySkuAndTenantIdAndIdNot(resolvedCode, tenantId, id)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+
         return productRepository.findByIdAndTenantId(id, tenantId)
                 .map(existing -> {
                     existing.setName(product.getName());
-                    existing.setSku(product.getSku());
+                    existing.setSku(resolvedCode);
                     existing.setQuantity(product.getQuantity());
                     existing.setMinStock(product.getMinStock());
                     existing.setExpiryDate(product.getExpiryDate());
                     existing.setPrice(product.getPrice());
+                    existing.setMrp(product.getMrp() != null ? product.getMrp() : product.getPrice());
+                    existing.setHsnSac(normalizeSku(product.getHsnSac()) != null ? normalizeSku(product.getHsnSac()) : resolvedCode);
+                    existing.setSetSize(product.getSetSize() == null || product.getSetSize() <= 0 ? 1 : product.getSetSize());
+                    existing.setPoNumber(product.getPoNumber());
+                    if (product.getSalesCount() != null && product.getSalesCount() >= 0) {
+                        existing.setSalesCount(product.getSalesCount());
+                    }
                     existing.setCategory(product.getCategory());
                     return ResponseEntity.ok(productRepository.save(existing));
                 })
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    private String normalizeSku(String sku) {
+        if (sku == null) {
+            return null;
+        }
+        String normalized = sku.trim();
+        return normalized.isEmpty() ? null : normalized;
+    }
+
+    private String resolveCatalogCode(Product product) {
+        String sku = normalizeSku(product.getSku());
+        if (sku != null) {
+            return sku;
+        }
+        return normalizeSku(product.getHsnSac());
     }
 
     @DeleteMapping("/{id}")

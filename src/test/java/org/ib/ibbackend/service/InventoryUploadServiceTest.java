@@ -19,9 +19,11 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.when;
 
 class InventoryUploadServiceTest {
@@ -37,13 +39,17 @@ class InventoryUploadServiceTest {
         ProductRepository productRepository = mock(ProductRepository.class);
         InventoryUploadService service = new InventoryUploadService(productRepository);
 
+        when(productRepository.findBySku(any())).thenReturn(Optional.empty());
+        when(productRepository.save(any(org.ib.ibbackend.entity.Product.class)))
+            .thenAnswer(invocation -> invocation.getArgument(0));
+
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "inventory.csv",
                 "text/csv",
-                ("Product,SKU,Qty,Min Stock,Price,Category\n" +
-                 "Rice,RICE-001,20,5,250,Groceries\n" +
-                 "Soap,SOAP-003,50,15,80,Personal Care\n").getBytes()
+            ("Item,HSN/SAC,MRP/ Item,QTY,Set,Price/QTY,PO Number,Min Stock,Category\n" +
+             "Rice,RICE-001,250,20,1,250,PO-1001,5,Groceries\n" +
+             "Soap,SOAP-003,80,50,1,80,PO-1002,15,Personal Care\n").getBytes()
         );
 
         var result = service.processUpload(file, "inventory-upload", null);
@@ -52,6 +58,37 @@ class InventoryUploadServiceTest {
         assertEquals(2, result.getCreatedCount());
         assertEquals(0, result.getUpdatedCount());
         assertEquals(0, result.getSkippedCount());
+        assertEquals("RICE-001", String.valueOf(result.getRecords().get(0).get("hsnSac")));
+        assertEquals("PO-1001", String.valueOf(result.getRecords().get(0).get("poNumber")));
+    }
+
+    @Test
+    void shouldProcessCsvUploadUsingBulkOrderTemplateHeaders() {
+        ProductRepository productRepository = mock(ProductRepository.class);
+        InventoryUploadService service = new InventoryUploadService(productRepository);
+
+        when(productRepository.findBySku(any())).thenReturn(Optional.empty());
+        when(productRepository.save(any(org.ib.ibbackend.entity.Product.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "bulk-order.csv",
+                "text/csv",
+            ("Item,HSN/SAC,MRP/ Item,QTY,Set,Price/QTY,PO Number,Min Stock,Category\n" +
+             "iphone,785693254,110000,10,2,98000,202601,2,Electronics\n" +
+             "TV LG,785693255,13000,5,1,130000,202601,1,Electronics\n").getBytes()
+        );
+
+        var result = service.processUpload(file, "inventory-upload", null);
+
+        assertTrue(result.isSuccess());
+        assertEquals(2, result.getCreatedCount());
+        assertEquals(0, result.getUpdatedCount());
+        assertEquals(0, result.getSkippedCount());
+        assertEquals("785693254", String.valueOf(result.getRecords().get(0).get("sku")));
+        assertEquals("110000", String.valueOf(result.getRecords().get(0).get("mrp")));
+        assertEquals("98000", String.valueOf(result.getRecords().get(0).get("pricePerQty")));
     }
 
     @Test
@@ -150,7 +187,7 @@ class InventoryUploadServiceTest {
     }
 
     @Test
-    void shouldOnlyRejectDuplicateSkuWithinTheSameTenant() {
+    void shouldUpdateExistingSkuWithinTheSameTenantAndAllowOtherTenants() {
         ProductRepository productRepository = mock(ProductRepository.class);
         UserRepository userRepository = mock(UserRepository.class);
 
@@ -167,25 +204,55 @@ class InventoryUploadServiceTest {
         );
         TenantContext.setCurrentTenant(9L);
 
+        org.ib.ibbackend.entity.Product existing = new org.ib.ibbackend.entity.Product();
+        existing.setId(100L);
+        existing.setSku("RICE-001");
+
         when(userRepository.findByEmail("tenantuser@example.com")).thenReturn(java.util.Optional.of(user));
-        when(productRepository.existsBySkuAndTenantId("RICE-001", 9L)).thenReturn(true);
+        when(productRepository.findBySkuAndTenantId("RICE-001", 9L)).thenReturn(Optional.of(existing));
+        when(productRepository.findBySkuAndTenantId("RICE-001", 10L)).thenReturn(Optional.empty());
+        when(productRepository.save(org.mockito.ArgumentMatchers.any(org.ib.ibbackend.entity.Product.class)))
+            .thenAnswer(invocation -> invocation.getArgument(0));
 
         InventoryUploadService service = new InventoryUploadService(productRepository, userRepository);
 
-        ValidationException ex = assertThrows(ValidationException.class,
-                () -> service.processUpload(
-                        null,
-                        null,
-                        "[{\"product\":\"Rice\",\"sku\":\"RICE-001\",\"qty\":5,\"minStock\":2,\"price\":100,\"category\":\"Groceries\"}]",
-                        9L,
-                        22L
-                ));
+        var sameTenantResult = service.processUpload(
+            null,
+            null,
+            "[{\"product\":\"Rice\",\"sku\":\"RICE-001\",\"hsnSac\":\"RICE-001\",\"qty\":5,\"minStock\":2,\"set\":1,\"price\":100,\"pricePerQty\":100,\"mrp\":100,\"category\":\"Groceries\"}]",
+            9L,
+            22L
+        );
 
-        assertTrue(ex.getErrors().stream().anyMatch(error -> error.contains("RICE-001") && error.contains("already exists")));
+        assertTrue(sameTenantResult.isSuccess());
+        assertEquals(0, sameTenantResult.getCreatedCount());
+        assertEquals(1, sameTenantResult.getUpdatedCount());
 
-        when(productRepository.existsBySkuAndTenantId("RICE-001", 10L)).thenReturn(false);
-        // same SKU in a different tenant should not be rejected by this tenant's validation path
-        assertFalse(productRepository.existsBySkuAndTenantId("RICE-001", 10L));
+        Tenant tenant10 = new Tenant();
+        tenant10.setId(10);
+
+        User user10 = new User();
+        user10.setId(30L);
+        user10.setEmail("tenant10@example.com");
+        user10.setTenant(tenant10);
+
+        SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken("tenant10@example.com", null)
+        );
+        TenantContext.setCurrentTenant(10L);
+        when(userRepository.findByEmail("tenant10@example.com")).thenReturn(java.util.Optional.of(user10));
+
+        var otherTenantResult = service.processUpload(
+            null,
+            null,
+            "[{\"product\":\"Rice\",\"sku\":\"RICE-001\",\"hsnSac\":\"RICE-001\",\"qty\":7,\"minStock\":2,\"set\":1,\"price\":100,\"pricePerQty\":100,\"mrp\":100,\"category\":\"Groceries\"}]",
+            10L,
+            30L
+        );
+
+        assertTrue(otherTenantResult.isSuccess());
+        assertEquals(1, otherTenantResult.getCreatedCount());
+        assertEquals(0, otherTenantResult.getUpdatedCount());
     }
 
     @Test

@@ -4,12 +4,12 @@ import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import jakarta.persistence.Entity;
-
 
 
 @Entity
-@Table(name = "products")
+@Table(name = "products", uniqueConstraints = {
+    @UniqueConstraint(name = "uk_products_tenant_sku", columnNames = {"tenant_id", "sku"})
+})
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Product {
 
@@ -20,7 +20,7 @@ public class Product {
     @Column(nullable = false)
     private String name;
 
-    @Column(unique = true)
+    @Column(nullable = false)
     private String sku;
 
     private Integer quantity = 0;
@@ -31,6 +31,21 @@ public class Product {
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal price;
 
+    @Column(name = "mrp", precision = 10, scale = 2)
+    private BigDecimal mrp;
+
+    @Column(name = "hsn_sac")
+    private String hsnSac;
+
+    @Column(name = "set_size")
+    private Integer setSize = 1;
+
+    @Column(name = "po_number")
+    private String poNumber;
+
+    @Column(name = "sales_count")
+    private Integer salesCount = 0;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 
@@ -40,16 +55,13 @@ public class Product {
     @Column(name = "expiry_date")
     private LocalDate expiryDate;
 
-    // ✅ ADD THIS RELATIONSHIP
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "tenant_id")
     private Tenant tenant;
 
-    // Default constructor (required by JPA)
     public Product() {
     }
 
-    // ✅ ADD GETTERS/SETTERS
     public Tenant getTenant() { return tenant; }
     public void setTenant(Tenant tenant) { this.tenant = tenant; }
 
@@ -102,6 +114,46 @@ public class Product {
 
     public void setPrice(BigDecimal price) {
         this.price = price;
+    }
+
+    public BigDecimal getMrp() {
+        return mrp;
+    }
+
+    public void setMrp(BigDecimal mrp) {
+        this.mrp = mrp;
+    }
+
+    public String getHsnSac() {
+        return hsnSac;
+    }
+
+    public void setHsnSac(String hsnSac) {
+        this.hsnSac = hsnSac;
+    }
+
+    public Integer getSetSize() {
+        return setSize;
+    }
+
+    public void setSetSize(Integer setSize) {
+        this.setSize = setSize;
+    }
+
+    public String getPoNumber() {
+        return poNumber;
+    }
+
+    public void setPoNumber(String poNumber) {
+        this.poNumber = poNumber;
+    }
+
+    public Integer getSalesCount() {
+        return salesCount;
+    }
+
+    public void setSalesCount(Integer salesCount) {
+        this.salesCount = salesCount;
     }
 
     public LocalDateTime getCreatedAt() {

@@ -128,6 +128,7 @@ public class InvoiceController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String billType,
             @RequestParam(defaultValue = "") String search) {
 
         Long tenantId = TenantContext.getCurrentTenant();
@@ -150,6 +151,15 @@ public class InvoiceController {
             invoices = invoices.getContent().stream()
                     .filter(invoice -> invoice.getStatus() != null && invoice.getStatus().name().equalsIgnoreCase(status))
                     .collect(Collectors.collectingAndThen(Collectors.toList(), list -> new org.springframework.data.domain.PageImpl<>(list, pageable, list.size())));
+        }
+
+        if (billType != null && !billType.isBlank()) {
+            String requested = billType.trim().toLowerCase();
+            if ("gst".equals(requested)) {
+                // This endpoint serves GST invoices only.
+            } else {
+                invoices = new org.springframework.data.domain.PageImpl<>(List.of(), pageable, 0);
+            }
         }
 
         Page<Map<String, Object>> summaryPage = invoices.map(invoice -> {
@@ -175,6 +185,8 @@ public class InvoiceController {
             summary.put("outstandingAmount", outstandingAmount);
             summary.put("paymentStatus", paymentStatus.name());
             summary.put("status", normalizeStatus(invoice.getStatus()));
+            summary.put("billType", "gst");
+            summary.put("isGstInvoice", true);
             summary.put("tenantId", invoice.getTenantId());
             summary.put("userId", invoice.getUserId());
             summary.put("items", invoice.getItems() != null ? invoice.getItems() : List.of());
