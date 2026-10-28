@@ -9,15 +9,18 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
-import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class MailMfaService {
     private static final Logger log = LoggerFactory.getLogger(MailMfaService.class);
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final MailMfaProperties properties;
     private final JavaMailSender mailSender;
@@ -51,24 +54,31 @@ public class MailMfaService {
             return false;
         }
 
-        OtpEntry stored = otpStore.get(normalizeEmail(email));
+        String normalizedEmail = normalizeEmail(email);
+        OtpEntry stored = otpStore.get(normalizedEmail);
         if (stored == null) {
             return false;
         }
 
-        boolean valid = stored.otp.equals(otp) && Instant.now().isBefore(stored.expiresAt);
+        if (Instant.now().isAfter(stored.expiresAt) || Instant.now().equals(stored.expiresAt)) {
+            otpStore.remove(normalizedEmail);
+            return false;
+        }
+
+        byte[] storedBytes = stored.otp.getBytes(StandardCharsets.UTF_8);
+        byte[] candidateBytes = otp.getBytes(StandardCharsets.UTF_8);
+        boolean valid = MessageDigest.isEqual(storedBytes, candidateBytes);
         if (valid) {
-            otpStore.remove(normalizeEmail(email));
+            otpStore.remove(normalizedEmail);
         }
         return valid;
     }
 
     private String generateOtp() {
         int length = properties.getOtpLength();
-        Random random = new Random();
         StringBuilder otp = new StringBuilder();
         for (int i = 0; i < length; i++) {
-            otp.append(random.nextInt(10));
+            otp.append(SECURE_RANDOM.nextInt(10));
         }
         return otp.toString();
     }

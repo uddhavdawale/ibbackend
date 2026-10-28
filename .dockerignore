@@ -1,0 +1,21 @@
+target/
+.git/
+.idea/
+.vscode/
+logs/
+*.log
+*.iml
+
+# Common local environment and secret files.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.jks
+
+# Maven cache from local machine should not be sent as build context.
+.mvn/wrapper/maven-wrapper.jar
+
+# Optional local docs/artifacts not needed for image build.
+*.md

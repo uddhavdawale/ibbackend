@@ -1,8 +1,10 @@
 package org.ib.ibbackend.controller;
 
+import com.google.firebase.auth.FirebaseAuthException;
 import org.ib.ibbackend.dto.MfaOtpRequest;
 import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.repository.UserRepository;
+import org.ib.ibbackend.service.FirebaseTokenVerifierService;
 import org.ib.ibbackend.service.JwtService;
 import org.ib.ibbackend.service.MailMfaService;
 import org.ib.ibbackend.service.RefreshTokenService;
@@ -35,8 +37,20 @@ public class MfaController {
     @Autowired
     private RefreshTokenService refreshTokenService;
 
+    @Autowired(required = false)
+    private FirebaseTokenVerifierService firebaseTokenVerifierService;
+
     @PostMapping("/send")
     public ResponseEntity<Map<String, Object>> sendOtp(@RequestBody Map<String, String> request) {
+        boolean firebaseEnabled = isFirebaseMfaEnabled();
+        if (firebaseEnabled) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("provider", "FIREBASE");
+            response.put("message", "Firebase MFA is enabled. Use the Firebase verification flow.");
+            return ResponseEntity.ok(response);
+        }
+
         if (!mailMfaService.isEnabled()) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("success", false, "message", "Mail MFA is disabled in configuration"));
@@ -54,6 +68,7 @@ public class MfaController {
 
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
+        response.put("provider", "MAIL");
         response.put("message", "OTP sent to your email");
         response.put("email", user.getEmail());
         return ResponseEntity.ok(response);
@@ -61,11 +76,6 @@ public class MfaController {
 
     @PostMapping("/verify")
     public ResponseEntity<Map<String, Object>> verifyOtp(@RequestBody MfaOtpRequest request) {
-        if (!mailMfaService.isEnabled()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("success", false, "message", "Mail MFA is disabled in configuration"));
-        }
-
         Optional<User> userOpt = findUserByLoginIdentifier(request.getUsername());
         if (userOpt.isEmpty()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -73,11 +83,36 @@ public class MfaController {
         }
 
         User user = userOpt.get();
+
+        String firebaseIdToken = request.getFirebaseIdToken();
+        if (firebaseIdToken != null && !firebaseIdToken.isBlank() && isFirebaseMfaEnabled()) {
+            try {
+                FirebaseTokenVerifierService.FirebaseIdentity identity = firebaseTokenVerifierService.verifyIdToken(firebaseIdToken);
+                if (!matchesUserIdentity(user, identity)) {
+                    return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                            .body(Map.of("success", false, "message", "Firebase identity mismatch"));
+                }
+                return issueLoginSuccessResponse(user);
+            } catch (FirebaseAuthException | IllegalArgumentException ex) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("success", false, "message", "Invalid Firebase OTP token"));
+            }
+        }
+
+        if (!mailMfaService.isEnabled()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "message", "No OTP verifier enabled. Enable Firebase or Mail MFA"));
+        }
+
         if (!mailMfaService.verifyOtp(user.getEmail(), request.getOtp())) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("success", false, "message", "Invalid or expired OTP"));
         }
 
+        return issueLoginSuccessResponse(user);
+    }
+
+    private ResponseEntity<Map<String, Object>> issueLoginSuccessResponse(User user) {
         String accessToken = jwtService.generateAccessToken(user);
         String refreshToken = jwtService.generateRefreshToken(user);
         refreshTokenService.storeToken(user, refreshToken);
@@ -104,9 +139,38 @@ public class MfaController {
         response.put("refreshToken", refreshToken);
         response.put("tokenType", "Bearer");
         response.put("user", userPayload);
+
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, refreshCookie.toString())
                 .body(response);
+    }
+
+    private boolean isFirebaseMfaEnabled() {
+        return firebaseTokenVerifierService != null && firebaseTokenVerifierService.isEnabled();
+    }
+
+    private boolean matchesUserIdentity(User user, FirebaseTokenVerifierService.FirebaseIdentity identity) {
+        if (user == null || identity == null) {
+            return false;
+        }
+
+        String firebaseEmail = normalize(identity.email());
+        String userEmail = normalize(user.getEmail());
+        if (firebaseEmail != null && userEmail != null && firebaseEmail.equals(userEmail)) {
+            return true;
+        }
+
+        String firebasePhone = normalize(identity.phoneNumber());
+        String userPhone = normalize(user.getPhone());
+        return firebasePhone != null && userPhone != null && firebasePhone.equals(userPhone);
+    }
+
+    private String normalize(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim().toLowerCase();
+        return normalized.isBlank() ? null : normalized;
     }
 
     private Optional<User> findUserByLoginIdentifier(String username) {

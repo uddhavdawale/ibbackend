@@ -1,5 +1,6 @@
 package org.ib.ibbackend;
 
+import org.ib.ibbackend.config.FirebaseMfaProperties;
 import org.ib.ibbackend.config.MailMfaProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,7 +11,7 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.data.web.config.EnableSpringDataWebSupport;
 
 @SpringBootApplication
-@EnableConfigurationProperties(MailMfaProperties.class)
+@EnableConfigurationProperties({MailMfaProperties.class, FirebaseMfaProperties.class})
 @EnableJpaRepositories(basePackages = "org.ib.ibbackend.repository")
 @EnableSpringDataWebSupport(pageSerializationMode = EnableSpringDataWebSupport.PageSerializationMode.VIA_DTO)
 public class IbbackendApplication {

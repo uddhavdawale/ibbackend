@@ -1,13 +1,17 @@
 # Spring Boot Inventory Upload Backend Report
 
 ## Overview
-This report defines the backend contract for bulk inventory upload from a CSV or Excel file. It is designed for a Spring Boot application and matches the frontend contract already defined in the project.
+This report documents the current backend implementation for bulk inventory import. The live implementation is already in the controller and service layer and is the contract that the frontend must follow.
 
-The frontend expects a REST endpoint that accepts a multipart file and stores validated inventory rows into the database.
+The endpoint accepts either:
+- a multipart upload file, or
+- a JSON `records` payload inline in the request body,
+
+and then validates and persists inventory rows under the authenticated tenant context.
 
 ---
 
-## API Contract
+## Current API Contract
 
 ### Endpoint
 POST /api/inventory/upload
@@ -15,85 +19,129 @@ POST /api/inventory/upload
 ### Content-Type
 multipart/form-data
 
-### Request Parameters
-- file: MultipartFile (required)
-- source: String (optional; frontend sends `inventory-upload`)
-- records: String (optional; frontend may also send JSON rows as a convenience field)
+### Request parameters
+- `file`: MultipartFile (required if `records` is not provided)
+- `tenantId`: Long (optional; validated against the authenticated tenant)
+- `userId`: Long (optional; must match the authenticated user)
+- `source`: String (optional)
+- `records`: String (optional; JSON array of rows used as an alternative to file upload)
 
-### Example request
+### Security requirement
+This endpoint is protected by JWT authentication. Requests without a valid bearer token are rejected before the controller is reached.
+
+### Example request with file
 ```bash
 curl -X POST "http://localhost:8080/api/inventory/upload" \
   -H "Authorization: Bearer <token>" \
   -F "file=@inventory.xlsx" \
   -F "source=inventory-upload" \
-  -F 'records=[{"product":"Rice","sku":"RICE-001","qty":20,"minStock":5,"price":250,"category":"Groceries"}]'
+  -F "tenantId=1" \
+  -F "userId=12"
 ```
 
-### Acceptable file formats
-- CSV
-- XLS
-- XLSX
-
-### Required columns in uploaded file
-The upload parser should accept files containing these columns:
-- Product
-- SKU
-- Qty
-- Min Stock
-- Price
-- Category
-
-Example CSV:
-```csv
-Product,SKU,Qty,Min Stock,Price,Category
-Rice,RICE-001,20,5,250,Groceries
-Wheat,WHEAT-002,35,10,180,Groceries
-Soap,SOAP-003,50,15,80,Personal Care
+### Example request with inline records
+```bash
+curl -X POST "http://localhost:8080/api/inventory/upload" \
+  -H "Authorization: Bearer <token>" \
+  -F "source=inventory-upload" \
+  -F "tenantId=1" \
+  -F 'records=[{"product":"Rice","sku":"RICE-001","qty":20,"minStock":5,"mrp":250,"price":250,"category":"Groceries","hsnSac":"1001","set":1,"poNumber":"PO-01"}]'
 ```
 
 ---
 
-## Expected Row Schema
-Each row should be normalized into this object before persistence:
+## Supported file formats
+The implementation supports:
+- CSV
+- XLS
+- XLSX
 
+The file validation logic blocks unsupported extensions and rejects oversize uploads.
+
+---
+
+## Current required / normalized columns
+The service maps headers using a flexible normalization strategy. It accepts common aliases and normalizes them internally.
+
+### Supported header keys and aliases
+- Product / Item / Name
+- SKU / Product SKU
+- HSN/SAC / HSN / HSN SAC
+- MRP/Item / MRP / MRP Item
+- Qty / Quantity
+- Min Stock / MinStock
+- Set
+- Price / Price/QTY / Unit Price
+- PO Number / PO / PONumber
+- Category / Categories
+
+### Normalized row fields used by the service
 ```json
 {
   "product": "Rice",
   "sku": "RICE-001",
+  "hsnSac": "1001",
+  "poNumber": "PO-01",
   "qty": 20,
   "minStock": 5,
+  "set": 1,
+  "mrp": 250,
   "price": 250,
+  "pricePerQty": 250,
   "category": "Groceries"
 }
 ```
 
 ---
 
-## Validation Rules
-The backend must validate every row before saving:
+## Validation rules in the current implementation
+The current code validates rows before saving:
 
-- `product` is required and cannot be blank
-- `sku` is required and must be unique
-- `qty` must be a non-negative number
-- `minStock` must be a non-negative number
+- `product` is required and limited to 200 chars
+- `hsnSac` is required and limited to 100 chars
+- `sku` is required and limited to 100 chars
+- `qty` must be a non-negative integer
+- `minStock` must be a non-negative integer
+- `mrp` must be a positive number
 - `price` must be a positive number
-- `category` is optional; default to `General` if missing
-- Duplicate rows in the same uploaded file should be handled by upsert or skipped based on business rule
-- Reject the entire upload if required headers are missing
+- `pricePerQty` must be positive if present
+- `set` must be a positive integer
+- `category` defaults to `General` if blank
+- upload size is capped at 5 MB (or the configured value)
+- maximum rows per upload is 5000 (or configured value)
+- duplicate rows in the same payload are skipped by sku
 
-### Required header mapping
-The Excel/CSV parser should normalize headers like these:
-- Product / product / Name / name
-- SKU / sku / Product SKU
-- Qty / qty / Quantity
-- Min Stock / minStock / MinStock
-- Price / price / Unit Price
-- Category / category / Categories
+### Required columns enforced by the service
+The code explicitly checks these required header groups:
+- Item
+- HSN/SAC
+- MRP/ Item
+- QTY
+- Min Stock
+
+If any are missing, the upload fails with a validation exception.
 
 ---
 
-## Success Response
-Status: 200 OK or 201 Created
+## Tenant and user resolution
+The implementation enforces tenant ownership during upload.
+
+### Behavior
+- The authenticated user is resolved from the security context or from `userId`.
+- The tenant is resolved from the current tenant context or the authenticated user tenant.
+- If `tenantId` is provided, it must match the resolved tenant.
+- If `userId` is provided, it must match the authenticated user.
+- If the user is not assigned to a tenant, the upload fails.
+
+This means the upload is effectively tenant-scoped and cannot be used across tenant boundaries.
+
+---
+
+## Current controller behavior
+The controller is implemented in [src/main/java/org/ib/ibbackend/controller/InventoryController.java](src/main/java/org/ib/ibbackend/controller/InventoryController.java).
+
+### Response format on success
+Status: 200 OK
 
 ```json
 {
@@ -110,322 +158,74 @@ Status: 200 OK or 201 Created
       "qty": 20,
       "minStock": 5,
       "price": 250,
+      "mrp": 250,
+      "set": 1,
+      "poNumber": "PO-01",
+      "hsnSac": "1001",
+      "pricePerQty": 250,
       "category": "Groceries"
     }
   ]
 }
 ```
 
----
-
-## Error Response
-Status: 400 Bad Request or 422 Unprocessable Entity
+### Response format on validation failure
+Status: 400 Bad Request
 
 ```json
 {
   "success": false,
-  "message": "Missing required columns: Product, SKU, Qty, Min Stock, Price",
+  "message": "Inventory upload validation failed",
   "errors": [
-    "Column Product is required",
-    "SKU RICE-001 already exists"
+    "Column Item is required",
+    "Qty must be a non-negative number",
+    "MRP/ Item must be a positive number"
   ]
 }
 ```
 
----
+### Response format on auth failure
+Status: 403 or 401 depending on security flow
 
-## Suggested Spring Boot Structure
-
-### 1. Controller
-```java
-@RestController
-@RequestMapping("/api/inventory")
-public class InventoryController {
-
-    private final InventoryUploadService inventoryUploadService;
-
-    public InventoryController(InventoryUploadService inventoryUploadService) {
-        this.inventoryUploadService = inventoryUploadService;
-    }
-
-    @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<?> uploadInventory(
-            @RequestParam("file") MultipartFile file,
-            @RequestParam(value = "source", required = false) String source,
-            @RequestParam(value = "records", required = false) String recordsJson) {
-
-        try {
-            InventoryUploadResult result = inventoryUploadService.processUpload(file, source, recordsJson);
-            return ResponseEntity.ok(Map.of(
-                "success", true,
-                "message", "Inventory uploaded successfully",
-                "created", result.getCreatedCount(),
-                "updated", result.getUpdatedCount(),
-                "skipped", result.getSkippedCount(),
-                "records", result.getRecords()
-            ));
-        } catch (ValidationException ex) {
-            return ResponseEntity.badRequest().body(Map.of(
-                "success", false,
-                "message", ex.getMessage(),
-                "errors", ex.getErrors()
-            ));
-        } catch (Exception ex) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
-                "success", false,
-                "message", "Inventory upload failed",
-                "error", ex.getMessage()
-            ));
-        }
-    }
-}
-```
-
-### 2. Service
-```java
-@Service
-public class InventoryUploadService {
-
-    private final InventoryRepository inventoryRepository;
-
-    public InventoryUploadResult processUpload(MultipartFile file, String source, String recordsJson) {
-        if (file == null || file.isEmpty()) {
-            throw new ValidationException("No file uploaded");
-        }
-
-        List<InventoryUploadRow> rows = parseFile(file);
-        validateRows(rows);
-
-        int created = 0;
-        int updated = 0;
-        int skipped = 0;
-        List<Map<String, Object>> savedRecords = new ArrayList<>();
-
-        for (InventoryUploadRow row : rows) {
-            Optional<Inventory> existing = inventoryRepository.findBySku(row.getSku());
-
-            if (existing.isPresent()) {
-                Inventory inventory = existing.get();
-                inventory.setProduct(row.getProduct());
-                inventory.setQty(row.getQty());
-                inventory.setMinStock(row.getMinStock());
-                inventory.setPrice(row.getPrice());
-                inventory.setCategory(row.getCategory());
-                inventoryRepository.save(inventory);
-                updated++;
-            } else {
-                Inventory inventory = new Inventory();
-                inventory.setProduct(row.getProduct());
-                inventory.setSku(row.getSku());
-                inventory.setQty(row.getQty());
-                inventory.setMinStock(row.getMinStock());
-                inventory.setPrice(row.getPrice());
-                inventory.setCategory(row.getCategory());
-                inventoryRepository.save(inventory);
-                created++;
-            }
-
-            savedRecords.add(Map.of(
-                "product", row.getProduct(),
-                "sku", row.getSku(),
-                "qty", row.getQty(),
-                "minStock", row.getMinStock(),
-                "price", row.getPrice(),
-                "category", row.getCategory()
-            ));
-        }
-
-        return new InventoryUploadResult(created, updated, skipped, savedRecords);
-    }
-}
-```
-
-### 3. DTO / Row model
-```java
-public class InventoryUploadRow {
-    private String product;
-    private String sku;
-    private Integer qty;
-    private Integer minStock;
-    private BigDecimal price;
-    private String category;
-
-    // getters and setters
-}
-```
-
-### 4. Entity
-```java
-@Entity
-@Table(name = "inventory")
-public class Inventory {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @Column(nullable = false)
-    private String product;
-
-    @Column(nullable = false, unique = true)
-    private String sku;
-
-    @Column(nullable = false)
-    private Integer qty;
-
-    @Column(nullable = false)
-    private Integer minStock;
-
-    @Column(nullable = false)
-    private BigDecimal price;
-
-    @Column(nullable = false)
-    private String category = "General";
-
-    // getters and setters
-}
-```
-
-### 5. Repository
-```java
-public interface InventoryRepository extends JpaRepository<Inventory, Long> {
-    Optional<Inventory> findBySku(String sku);
-    boolean existsBySku(String sku);
+```json
+{
+  "message": "Invalid or expired token"
 }
 ```
 
 ---
 
-## File Parsing Strategy
-Use Apache POI for Excel import and a CSV parser for CSV files.
+## Data persistence behavior
+The current implementation persists to the `Product` entity and uses tenant-scoped product lookup.
 
-### Maven dependencies
-```xml
-<dependency>
-  <groupId>org.apache.poi</groupId>
-  <artifactId>poi-ooxml</artifactId>
-  <version>5.2.5</version>
-</dependency>
+### Persist logic
+- Finds an existing product by `sku` and tenant if a tenant is resolved.
+- Creates a new `Product` if not found.
+- Sets product fields such as name, sku, hsnSac, qty, minStock, price, mrp, setSize, poNumber, category, and tenant.
+- Saves the product and counts it as create or update.
+- Returns the saved records list with the created/updated product metadata.
 
-<dependency>
-  <groupId>com.opencsv</groupId>
-  <artifactId>opencsv</artifactId>
-  <version>5.9</version>
-</dependency>
-```
-
-### Parser approach
-- For .xlsx / .xls: use `WorkbookFactory.create(file.getInputStream())`
-- For .csv: use `CSVReader` and map header names to model fields
-- Normalize headers to lowercase and remove non-alphanumeric characters before matching
-
-### Example parser outline
-```java
-public List<InventoryUploadRow> parseFile(MultipartFile file) {
-    String originalName = file.getOriginalFilename();
-    String ext = StringUtils.getFilenameExtension(originalName);
-
-    if (ext == null) {
-        throw new ValidationException("Unsupported file type");
-    }
-
-    switch (ext.toLowerCase()) {
-        case "csv":
-            return parseCsv(file);
-        case "xls":
-        case "xlsx":
-            return parseExcel(file);
-        default:
-            throw new ValidationException("Only CSV, XLS, and XLSX files are supported");
-    }
-}
-```
+### Important implementation detail
+The method does not use a separate upload staging table or generic inventory entity. It writes directly to the `Product` repository.
 
 ---
 
-## Validation and Error Handling
-Recommended validation flow:
+## Current implementation notes
+The actual implementation currently lives in:
+- [src/main/java/org/ib/ibbackend/controller/InventoryController.java](src/main/java/org/ib/ibbackend/controller/InventoryController.java)
+- [src/main/java/org/ib/ibbackend/service/InventoryUploadService.java](src/main/java/org/ib/ibbackend/service/InventoryUploadService.java)
+- [src/main/java/org/ib/ibbackend/security/SecurityConfig.java](src/main/java/org/ib/ibbackend/security/SecurityConfig.java)
+- [src/main/java/org/ib/ibbackend/filter/JwtAuthFilter.java](src/main/java/org/ib/ibbackend/filter/JwtAuthFilter.java)
 
-1. Check file exists and type is allowed
-2. Parse rows from file
-3. Ensure required columns are present
-4. Normalize and trim all values
-5. Validate each row
-6. Reject the entire request if critical validation fails
-7. Save in a transaction
-
-### Recommended custom exception
-```java
-public class ValidationException extends RuntimeException {
-    private final List<String> errors;
-
-    public ValidationException(String message) {
-        super(message);
-        this.errors = List.of(message);
-    }
-
-    public ValidationException(String message, List<String> errors) {
-        super(message);
-        this.errors = errors;
-    }
-
-    public List<String> getErrors() {
-        return errors;
-    }
-}
-```
+This means the backend contract differs slightly from the older conceptual report:
+- auth is mandatory,
+- tenant validation is enforced,
+- the allowed fields are broader than a simple product-only CSV,
+- file parsing and validation are concrete and implementation-driven, not generic placeholders.
 
 ---
 
-## Database Transaction Guidance
-The import should be wrapped in a single transaction for consistency.
+## Summary
+The current upload endpoint is a tenant-aware, JWT-protected, multipart-based bulk import endpoint for `Product` records. It accepts CSV/XLS/XLSX files or inline JSON records, validates them strictly, and persists them to the product table under the authenticated tenant.
 
-```java
-@Transactional
-public InventoryUploadResult processUpload(MultipartFile file, String source, String recordsJson) {
-    List<InventoryUploadRow> rows = parseFile(file);
-    validateRows(rows);
-    // save rows here
-    return new InventoryUploadResult(...);
-}
-```
-
-This ensures:
-- no partial inventory import if a row fails validation
-- integrity of SKU uniqueness
-- predictable behavior during bulk operations
-
----
-
-## Optional Helper Endpoint
-### GET /api/inventory/upload-template
-Returns a CSV template file for bulk upload.
-
-Example response: downloadable `inventory-upload-template.csv`
-
-```csv
-Product,SKU,Qty,Min Stock,Price,Category
-Rice,RICE-001,20,5,250,Groceries
-```
-
----
-
-## Notes for the Backend Agent
-- The frontend already sends `MultipartFile` and optional `records` JSON.
-- Keep the import logic isolated in a dedicated service and controller rather than embedding it in existing product CRUD code.
-- Use transaction-based bulk save for clean rollback.
-- If the project already has an inventory entity, reuse it rather than creating a separate upload table unless a staging table is required.
-- Reject invalid rows with explanatory errors and return a clean JSON payload.
-
----
-
-## Final Implementation Recommendation
-Create the feature as a dedicated module with:
-- `InventoryController`
-- `InventoryUploadService`
-- `InventoryRepository`
-- `InventoryUploadRow` DTO
-- custom validation logic
-- Excel/CSV parsing utilities
-
-This keeps the feature easy to maintain and aligned with the frontend module structure.
+This report reflects the actual code path currently in the project rather than the earlier proposed design.

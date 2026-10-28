@@ -7,7 +7,7 @@ public class SignupRequest {
     private String ownerName;
     private String email;
     private String phone;
-    private String passwordHash;  // Frontend hashed
+    private String passwordHash;  // Raw password from frontend; backend hashes securely
     private String role;
     private String gstin;
     private String pan;

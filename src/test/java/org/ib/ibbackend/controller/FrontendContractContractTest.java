@@ -13,6 +13,7 @@ import org.ib.ibbackend.repository.InvoiceRepository;
 import org.ib.ibbackend.repository.ProductRepository;
 import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.service.JwtService;
+import org.ib.ibbackend.service.PasswordSecurityService;
 import org.ib.ibbackend.service.RefreshTokenService;
 import org.ib.ibbackend.service.SequenceService;
 import org.junit.jupiter.api.Test;
@@ -62,7 +63,7 @@ class FrontendContractContractTest {
         RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
 
         ReflectionTestUtils.setField(controller, "userRepo", userRepo);
-        ReflectionTestUtils.setField(controller, "bcrypt", bcrypt);
+        ReflectionTestUtils.setField(controller, "passwordSecurityService", new PasswordSecurityService(bcrypt));
         ReflectionTestUtils.setField(controller, "jwtService", jwtService);
         ReflectionTestUtils.setField(controller, "refreshTokenService", refreshTokenService);
 
@@ -190,7 +191,7 @@ class FrontendContractContractTest {
     void refreshTokenFailureShouldReturnUnauthorized() {
         AuthController controller = new AuthController();
         ReflectionTestUtils.setField(controller, "userRepo", mock(UserRepository.class));
-        ReflectionTestUtils.setField(controller, "bcrypt", new BCryptPasswordEncoder());
+        ReflectionTestUtils.setField(controller, "passwordSecurityService", new PasswordSecurityService(new BCryptPasswordEncoder()));
         ReflectionTestUtils.setField(controller, "jwtService", mock(JwtService.class));
         ReflectionTestUtils.setField(controller, "refreshTokenService", mock(RefreshTokenService.class));
 

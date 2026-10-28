@@ -7,15 +7,16 @@ import org.ib.ibbackend.entity.Tenant;
 import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.repository.TenantRepository;
 import org.ib.ibbackend.repository.UserRepository;
+import org.ib.ibbackend.service.FirebaseTokenVerifierService;
 import org.ib.ibbackend.service.JwtService;
 import org.ib.ibbackend.service.MailMfaService;
+import org.ib.ibbackend.service.PasswordSecurityService;
 import org.ib.ibbackend.service.RefreshTokenService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Duration;
@@ -33,7 +34,7 @@ public class LoginController {
     private TenantRepository tenantRepository;
 
     @Autowired
-    private BCryptPasswordEncoder passwordEncoder;
+    private PasswordSecurityService passwordSecurityService;
 
     @Autowired
     private JwtService jwtService;
@@ -43,6 +44,9 @@ public class LoginController {
 
     @Autowired
     private MailMfaService mailMfaService;
+
+    @Autowired(required = false)
+    private FirebaseTokenVerifierService firebaseTokenVerifierService;
 
     @PostMapping(path = {"/api/login", "/login"})
     public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) {
@@ -55,13 +59,39 @@ public class LoginController {
 
         User user = userOpt.get();
 
-        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+        if (!passwordSecurityService.matches(request.getPassword(), user.getPasswordHash())) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(new LoginResponse(false, "Invalid username or password"));
         }
 
-        if (mailMfaService.isEnabled()) {
-            mailMfaService.issueOtp(user.getEmail());
+        boolean firebaseMfaEnabled = isFirebaseMfaEnabled();
+        boolean mailMfaEnabled = mailMfaService != null && mailMfaService.isEnabled();
+
+        if (firebaseMfaEnabled || mailMfaEnabled) {
+            if (firebaseMfaEnabled) {
+                LoginResponse response = new LoginResponse(false, "MFA verification required");
+                response.setRequiresMfa(true);
+                response.setUsername(user.getOwnerName());
+                response.setRole(user.getRole());
+                response.setEmail(user.getEmail());
+                response.setUser(Map.of(
+                        "id", user.getId(),
+                        "username", user.getOwnerName(),
+                        "name", user.getOwnerName(),
+                        "email", user.getEmail(),
+                        "role", user.getRole(),
+                        "mfaProvider", "FIREBASE"
+                ));
+                return ResponseEntity.ok(response);
+            }
+
+            try {
+                mailMfaService.issueOtp(user.getEmail());
+            } catch (RuntimeException ex) {
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                        .body(new LoginResponse(false, "MFA email could not be sent. Check SMTP configuration."));
+            }
+
             LoginResponse response = new LoginResponse(false, "MFA verification required");
             response.setRequiresMfa(true);
             response.setUsername(user.getOwnerName());
@@ -72,7 +102,8 @@ public class LoginController {
                     "username", user.getOwnerName(),
                     "name", user.getOwnerName(),
                     "email", user.getEmail(),
-                    "role", user.getRole()
+                    "role", user.getRole(),
+                    "mfaProvider", "MAIL"
             ));
             return ResponseEntity.ok(response);
         }
@@ -164,6 +195,10 @@ public class LoginController {
         }
 
         return prefix + String.valueOf(suffix).substring(Math.max(0, String.valueOf(suffix).length() - 4));
+    }
+
+    private boolean isFirebaseMfaEnabled() {
+        return firebaseTokenVerifierService != null && firebaseTokenVerifierService.isEnabled();
     }
 
     @RequestMapping("/dummy")

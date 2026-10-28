@@ -8,13 +8,13 @@ import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.repository.TenantRepository;
 import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.service.JwtService;
+import org.ib.ibbackend.service.PasswordSecurityService;
 import org.ib.ibbackend.service.RefreshTokenService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Duration;
@@ -34,7 +34,7 @@ public class AuthController {
     private TenantRepository tenantRepo;
 
     @Autowired
-    private BCryptPasswordEncoder bcrypt;
+    private PasswordSecurityService passwordSecurityService;
 
     @Autowired
     private JwtService jwtService;
@@ -47,7 +47,7 @@ public class AuthController {
         User user = findUserByLoginIdentifier(req.getUsername())
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        if (!bcrypt.matches(req.getPassword(), user.getPasswordHash())) {
+        if (!passwordSecurityService.matches(req.getPassword(), user.getPasswordHash())) {
             return ResponseEntity.status(401).build();
         }
 
@@ -194,7 +194,7 @@ public class AuthController {
                         .body(new ApiResponse(false, "Email already exists"));
             }
 
-            String userPassword = bcrypt.encode(request.getPasswordHash());
+            String userPassword = passwordSecurityService.hashNewPassword(request.getPasswordHash());
             String businessName = request.getBusinessName() == null ? "Default Business" : request.getBusinessName().trim();
             if (businessName.isBlank()) {
                 businessName = "Default Business";
@@ -218,6 +218,9 @@ public class AuthController {
 
             return ResponseEntity.ok(new ApiResponse(true, "Account created successfully"));
 
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                .body(new ApiResponse(false, e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.internalServerError()
                     .body(new ApiResponse(false, "Server error: " + e.getMessage()));
