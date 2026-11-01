@@ -9,11 +9,15 @@ import org.springframework.stereotype.Service;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import java.util.Set;
 
 @Service
 public class UserProvisioningService {
+
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-z0-9._-]{3,50}$");
 
     private static final Set<String> ADMIN_CAPABLE_ROLES = new HashSet<>(Arrays.asList(
             "store_admin", "owner", "admin", "shop_owner", "retailer", "super_admin", "org_admin"
@@ -36,16 +40,35 @@ public class UserProvisioningService {
         if (request == null || request.getEmail() == null || request.getEmail().isBlank()) {
             throw new IllegalArgumentException("Email is required");
         }
-        return request.getEmail().trim();
+        return request.getEmail().trim().toLowerCase(Locale.ROOT);
     }
 
-    public User provisionUser(SignupRequest request, String normalizedEmail, Optional<User> creatorOpt) {
+    public String requireNormalizedUsername(SignupRequest request) {
+        if (request == null || request.getUsername() == null || request.getUsername().isBlank()) {
+            throw new IllegalArgumentException("Username is required");
+        }
+
+        String normalizedUsername = request.getUsername().trim().toLowerCase(Locale.ROOT);
+        if (!USERNAME_PATTERN.matcher(normalizedUsername).matches()) {
+            throw new IllegalArgumentException("Username must be 3-50 characters and contain only letters, numbers, dot, underscore, or hyphen");
+        }
+
+        return normalizedUsername;
+    }
+
+    public User provisionUser(SignupRequest request,
+                              String normalizedEmail,
+                              String normalizedUsername,
+                              Optional<User> creatorOpt) {
         return creatorOpt
-                .map(creator -> buildChildUserFromCreator(creator, request, normalizedEmail))
-                .orElseGet(() -> buildRootUser(request, normalizedEmail));
+                .map(creator -> buildChildUserFromCreator(creator, request, normalizedEmail, normalizedUsername))
+                .orElseGet(() -> buildRootUser(request, normalizedEmail, normalizedUsername));
     }
 
-    private User buildChildUserFromCreator(User creator, SignupRequest request, String normalizedEmail) {
+    private User buildChildUserFromCreator(User creator,
+                                           SignupRequest request,
+                                           String normalizedEmail,
+                                           String normalizedUsername) {
         if (creator == null) {
             throw new IllegalArgumentException("Creator is required");
         }
@@ -59,7 +82,7 @@ public class UserProvisioningService {
             throw new SecurityException("Creator tenant is required");
         }
 
-        User user = buildCommonUserFields(request, normalizedEmail);
+        User user = buildCommonUserFields(request, normalizedEmail, normalizedUsername);
 
         String businessNameFallback = resolveBusinessName(request.getBusinessName());
         String creatorBusinessName = creator.getBusinessName() == null || creator.getBusinessName().isBlank()
@@ -77,8 +100,8 @@ public class UserProvisioningService {
         return user;
     }
 
-    private User buildRootUser(SignupRequest request, String normalizedEmail) {
-        User user = buildCommonUserFields(request, normalizedEmail);
+    private User buildRootUser(SignupRequest request, String normalizedEmail, String normalizedUsername) {
+        User user = buildCommonUserFields(request, normalizedEmail, normalizedUsername);
         String businessName = resolveBusinessName(request.getBusinessName());
 
         user.setBusinessName(businessName);
@@ -88,17 +111,28 @@ public class UserProvisioningService {
         return user;
     }
 
-    private User buildCommonUserFields(SignupRequest request, String normalizedEmail) {
+    private User buildCommonUserFields(SignupRequest request,
+                                       String normalizedEmail,
+                                       String normalizedUsername) {
         User user = new User();
         user.setEmail(normalizedEmail);
+        user.setUsername(normalizedUsername);
         user.setPasswordHash(passwordSecurityService.hashNewPassword(request.getPasswordHash()));
-        user.setPhone(request.getPhone());
-        user.setGstin(request.getGstin());
-        user.setPan(request.getPan());
-        user.setAddress(request.getAddress());
-        user.setCity(request.getCity());
-        user.setPincode(request.getPincode());
+        user.setPhone(trimToNull(request.getPhone()));
+        user.setGstin(trimToNull(request.getGstin()));
+        user.setPan(trimToNull(request.getPan()));
+        user.setAddress(trimToNull(request.getAddress()));
+        user.setCity(trimToNull(request.getCity()));
+        user.setPincode(trimToNull(request.getPincode()));
         return user;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isBlank() ? null : trimmed;
     }
 
     private String resolveBusinessName(String businessName) {

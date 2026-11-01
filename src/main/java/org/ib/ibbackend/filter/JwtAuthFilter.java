@@ -63,7 +63,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 Long tenantId = jwtService.getTenantId(token);
 
                 if (StringUtils.hasText(username)) {
-                    User user = userRepository.findByEmail(username).orElse(null);
+                    User user = userRepository.findByEmail(username)
+                            .or(() -> userRepository.findByUsername(username))
+                            .orElse(null);
                     if (user == null || !jwtService.isAccessTokenValid(token, user)) {
                         throw new SecurityException("Access token is invalid for user");
                     }

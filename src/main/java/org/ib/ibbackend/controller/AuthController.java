@@ -16,6 +16,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Locale;
 import java.util.Optional;
 
 @RestController
@@ -65,7 +67,7 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<Map<String, Object>> login(@RequestBody LoginRequest req) {
-        Optional<User> userOpt = findUserByLoginIdentifier(req.getUsername());
+        Optional<User> userOpt = findUserByLoginIdentifier(resolveLoginIdentifier(req.getUsername(), req.getEmail()));
         if (userOpt.isEmpty()) {
             auditFailure("LOGIN", "N/A", "Unknown username");
             return ResponseEntity.status(401).build();
@@ -91,8 +93,9 @@ public class AuthController {
                 .build();
 
         Map<String, Object> userPayload = new HashMap<>();
+        String loginUsername = resolveLoginUsername(user);
         userPayload.put("id", user.getId());
-        userPayload.put("username", user.getOwnerName());
+        userPayload.put("username", loginUsername);
         userPayload.put("name", user.getOwnerName());
         userPayload.put("email", user.getEmail());
         userPayload.put("role", user.getRole());
@@ -130,18 +133,25 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Refresh token missing");
         }
 
+        final String refreshTokenToValidate = incomingRefreshToken;
+
         try {
-            User user = findUserByLoginIdentifier(request != null ? request.getUsername() : null)
+            String requestedIdentifier = request == null
+                ? null
+                : resolveLoginIdentifier(request.getUsername(), request.getEmail());
+
+            User user = findUserByLoginIdentifier(requestedIdentifier)
+                    .or(() -> findUserByLoginIdentifier(jwtService.extractRefreshClaims(refreshTokenToValidate).getSubject()))
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
-            if (!refreshTokenService.isValidForUser(user, incomingRefreshToken)) {
+            if (!refreshTokenService.isValidForUser(user, refreshTokenToValidate)) {
                 auditFailure("TOKEN_REFRESH", String.valueOf(user.getId()), "Invalid refresh token for user");
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid or expired refresh token");
             }
 
             String newAccessToken = jwtService.generateAccessToken(user);
             String newRefreshToken = jwtService.generateRefreshToken(user);
-            refreshTokenService.rotateToken(user, incomingRefreshToken, newRefreshToken);
+            refreshTokenService.rotateToken(user, refreshTokenToValidate, newRefreshToken);
 
             ResponseCookie refreshCookie = ResponseCookie.from("refreshToken", newRefreshToken)
                     .httpOnly(true)
@@ -152,8 +162,9 @@ public class AuthController {
                     .build();
 
             Map<String, Object> userPayload = new HashMap<>();
+            String loginUsername = resolveLoginUsername(user);
             userPayload.put("id", user.getId());
-            userPayload.put("username", user.getOwnerName());
+            userPayload.put("username", loginUsername);
             userPayload.put("name", user.getOwnerName());
             userPayload.put("email", user.getEmail());
             userPayload.put("role", user.getRole());
@@ -163,7 +174,7 @@ public class AuthController {
             RefreshTokenResponse response = new RefreshTokenResponse(true, "Token refreshed successfully");
             response.setAccessToken(newAccessToken);
             response.setRefreshToken(newRefreshToken);
-            response.setUserName(user.getOwnerName());
+            response.setUserName(loginUsername);
             response.setUser(userPayload);
 
             auditSuccess("TOKEN_REFRESH", String.valueOf(user.getId()), "Refresh token rotated successfully");
@@ -222,13 +233,20 @@ public class AuthController {
     public ResponseEntity<ApiResponse> signup(@RequestBody SignupRequest request) {
         try {
             String normalizedEmail = userProvisioningService.requireNormalizedEmail(request);
+            String normalizedUsername = userProvisioningService.requireNormalizedUsername(request);
+
+            if (userRepo.existsByUsername(normalizedUsername)) {
+                return ResponseEntity.badRequest()
+                        .body(new ApiResponse(false, "Username already exists"));
+            }
+
             if (userRepo.existsByEmail(normalizedEmail)) {
                 return ResponseEntity.badRequest()
                         .body(new ApiResponse(false, "Email already exists"));
             }
 
             Optional<User> creatorOpt = resolveAuthenticatedCreator();
-            User user = userProvisioningService.provisionUser(request, normalizedEmail, creatorOpt);
+            User user = userProvisioningService.provisionUser(request, normalizedEmail, normalizedUsername, creatorOpt);
 
             userRepo.save(user);
 
@@ -249,6 +267,10 @@ public class AuthController {
             auditFailure("SIGNUP", "N/A", "Validation failed: " + e.getMessage());
             return ResponseEntity.badRequest()
                 .body(new ApiResponse(false, e.getMessage()));
+        } catch (DataIntegrityViolationException e) {
+            auditFailure("SIGNUP", "N/A", "Duplicate username or email");
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(new ApiResponse(false, "Username or email already exists"));
         } catch (Exception e) {
             auditFailure("SIGNUP", "N/A", "Server error during signup");
             return ResponseEntity.internalServerError()
@@ -267,21 +289,50 @@ public class AuthController {
         if (byEmail.isPresent()) {
             return byEmail;
         }
-        return userRepo.findByOwnerName(principal);
+
+        Optional<User> byUsername = userRepo.findByUsername(principal);
+        return byUsername == null ? Optional.empty() : byUsername;
     }
 
-    private Optional<User> findUserByLoginIdentifier(String username) {
-        if (username == null || username.isBlank()) {
+    private Optional<User> findUserByLoginIdentifier(String loginIdentifier) {
+        if (loginIdentifier == null || loginIdentifier.isBlank()) {
             return Optional.empty();
         }
 
-        Optional<User> userByEmail = userRepo.findByEmail(username);
+        String trimmedIdentifier = loginIdentifier.trim();
+        String normalizedUsername = trimmedIdentifier.toLowerCase(Locale.ROOT);
+
+        Optional<User> userByUsername = userRepo.findByUsername(normalizedUsername);
+        if (userByUsername != null && userByUsername.isPresent()) {
+            return ensureTenant(userByUsername.get());
+        }
+
+        Optional<User> userByEmail = userRepo.findByEmail(trimmedIdentifier);
+        if (!userByEmail.isPresent()) {
+            userByEmail = userRepo.findByEmail(trimmedIdentifier.toLowerCase(Locale.ROOT));
+        }
         if (userByEmail.isPresent()) {
             return ensureTenant(userByEmail.get());
         }
 
-        return userRepo.findByOwnerName(username)
-                .flatMap(this::ensureTenant);
+        return Optional.empty();
+    }
+
+    private String resolveLoginIdentifier(String username, String email) {
+        if (username != null && !username.isBlank()) {
+            return username;
+        }
+        if (email != null && !email.isBlank()) {
+            return email;
+        }
+        return null;
+    }
+
+    private String resolveLoginUsername(User user) {
+        if (user.getUsername() != null && !user.getUsername().isBlank()) {
+            return user.getUsername();
+        }
+        return user.getEmail();
     }
 
     private Optional<User> ensureTenant(User user) {

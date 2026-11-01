@@ -65,6 +65,7 @@ class AuthControllerTenantTest {
         SignupRequest firstRequest = new SignupRequest();
         firstRequest.setBusinessName("Demo Supermart");
         firstRequest.setOwnerName("demo");
+        firstRequest.setUsername("demo_owner_1");
         firstRequest.setEmail("demo@example.com");
         firstRequest.setPasswordHash("plainPassword");
         firstRequest.setRole("STORE_ADMIN");
@@ -72,6 +73,7 @@ class AuthControllerTenantTest {
         SignupRequest secondRequest = new SignupRequest();
         secondRequest.setBusinessName("Demo Supermart");
         secondRequest.setOwnerName("demo-two");
+        secondRequest.setUsername("demo_owner_2");
         secondRequest.setEmail("demo2@example.com");
         secondRequest.setPasswordHash("plainPassword");
         secondRequest.setRole("STORE_ADMIN");
@@ -107,6 +109,7 @@ class AuthControllerTenantTest {
         SignupRequest request = new SignupRequest();
         request.setBusinessName("Demo Supermart");
         request.setOwnerName("demo");
+        request.setUsername("demo_owner_short");
         request.setEmail("demo@example.com");
         request.setPasswordHash("short123");
         request.setRole("STORE_ADMIN");
@@ -146,6 +149,7 @@ class AuthControllerTenantTest {
         SignupRequest childRequest = new SignupRequest();
         childRequest.setBusinessName("Spoofed Business");
         childRequest.setOwnerName("Spoofed Owner");
+        childRequest.setUsername("staff77");
         childRequest.setTenantId(77L);
         childRequest.setEmail("staff1@example.com");
         childRequest.setPasswordHash("verySecurePassword123");
@@ -169,6 +173,7 @@ class AuthControllerTenantTest {
         assertEquals(77, saved.getTenant().getId());
         assertEquals("Store Owner", saved.getOwnerName());
         assertEquals("Store 77", saved.getBusinessName());
+        assertEquals("staff77", saved.getUsername());
         assertEquals("store_billing_viewer", saved.getRole());
         assertEquals("hashedPassword", saved.getPasswordHash());
 
@@ -193,6 +198,7 @@ class AuthControllerTenantTest {
         );
 
         SignupRequest request = new SignupRequest();
+        request.setUsername("new_user88");
         request.setEmail("newuser@example.com");
         request.setPasswordHash("verySecurePassword123");
         request.setRole("store_manager");
@@ -225,6 +231,7 @@ class AuthControllerTenantTest {
         );
 
         SignupRequest request = new SignupRequest();
+        request.setUsername("new_user99");
         request.setEmail("newuser2@example.com");
         request.setPasswordHash("verySecurePassword123");
         request.setRole("store_manager");
@@ -253,6 +260,7 @@ class AuthControllerTenantTest {
         SignupRequest request = new SignupRequest();
         request.setBusinessName("Demo Supermart");
         request.setOwnerName("demo");
+        request.setUsername("demo_unknown_role");
         request.setEmail("demo3@example.com");
         request.setPasswordHash("verySecurePassword123");
         request.setRole("custom_unknown_role");

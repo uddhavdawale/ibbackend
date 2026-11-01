@@ -276,7 +276,8 @@ public class AuditController {
         if (byEmail.isPresent()) {
             return byEmail.get();
         }
-        return userRepository.findByOwnerName(principal).orElse(null);
+
+        return userRepository.findByUsername(principal).orElse(null);
     }
 
     private Long resolveTenantId(User user) {

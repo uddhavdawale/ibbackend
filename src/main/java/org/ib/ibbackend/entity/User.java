@@ -12,7 +12,10 @@ import java.util.Set;
 }
 
 @Entity
-@Table(name = "users", uniqueConstraints = @UniqueConstraint(columnNames = "email"))
+@Table(name = "users", uniqueConstraints = {
+    @UniqueConstraint(columnNames = "email"),
+    @UniqueConstraint(columnNames = "username")
+})
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Data
 public class User {
@@ -25,6 +28,9 @@ public class User {
 
     @Column(nullable = false)
     private String ownerName;
+
+    @Column(unique = true)
+    private String username;
 
     @Column(nullable = false, unique = true)
     private String email;
@@ -72,6 +78,9 @@ public class User {
 
     public String getOwnerName() { return ownerName; }
     public void setOwnerName(String ownerName) { this.ownerName = ownerName; }
+
+    public String getUsername() { return username; }
+    public void setUsername(String username) { this.username = username; }
 
 
     public String getPhone() { return phone; }

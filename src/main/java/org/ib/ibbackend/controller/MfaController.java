@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -153,8 +154,9 @@ public class MfaController {
                 .build();
 
         Map<String, Object> userPayload = new HashMap<>();
+        String loginUsername = resolveLoginUsername(user);
         userPayload.put("id", user.getId());
-        userPayload.put("username", user.getOwnerName());
+        userPayload.put("username", loginUsername);
         userPayload.put("name", user.getOwnerName());
         userPayload.put("email", user.getEmail());
         userPayload.put("role", user.getRole());
@@ -200,16 +202,34 @@ public class MfaController {
         return normalized.isBlank() ? null : normalized;
     }
 
-    private Optional<User> findUserByLoginIdentifier(String username) {
-        if (username == null || username.isBlank()) {
+    private Optional<User> findUserByLoginIdentifier(String loginIdentifier) {
+        if (loginIdentifier == null || loginIdentifier.isBlank()) {
             return Optional.empty();
         }
 
-        Optional<User> userByEmail = userRepository.findByEmail(username);
+        String trimmedIdentifier = loginIdentifier.trim();
+        String normalizedUsername = trimmedIdentifier.toLowerCase(Locale.ROOT);
+
+        Optional<User> userByUsername = userRepository.findByUsername(normalizedUsername);
+        if (userByUsername != null && userByUsername.isPresent()) {
+            return userByUsername;
+        }
+
+        Optional<User> userByEmail = userRepository.findByEmail(trimmedIdentifier);
+        if (!userByEmail.isPresent()) {
+            userByEmail = userRepository.findByEmail(trimmedIdentifier.toLowerCase(Locale.ROOT));
+        }
         if (userByEmail.isPresent()) {
             return userByEmail;
         }
 
-        return userRepository.findByOwnerName(username);
+        return Optional.empty();
+    }
+
+    private String resolveLoginUsername(User user) {
+        if (user.getUsername() != null && !user.getUsername().isBlank()) {
+            return user.getUsername();
+        }
+        return user.getEmail();
     }
 }

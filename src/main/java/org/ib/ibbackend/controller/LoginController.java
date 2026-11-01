@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -66,7 +67,7 @@ public class LoginController {
 
     @PostMapping(path = {"/api/login", "/login"})
     public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) {
-        Optional<User> userOpt = findUserByLoginIdentifier(request.getUsername());
+        Optional<User> userOpt = findUserByLoginIdentifier(resolveLoginIdentifier(request.getUsername(), request.getEmail()));
 
         if (userOpt.isEmpty()) {
             auditFailure("LOGIN", "N/A", "Unknown username");
@@ -89,13 +90,14 @@ public class LoginController {
             if (firebaseMfaEnabled) {
                 auditSuccess("MFA_CHALLENGE", String.valueOf(user.getId()), "Firebase MFA challenge required");
                 LoginResponse response = new LoginResponse(false, "MFA verification required");
+                String loginUsername = resolveLoginUsername(user);
                 response.setRequiresMfa(true);
-                response.setUsername(user.getOwnerName());
+                response.setUsername(loginUsername);
                 response.setRole(user.getRole());
                 response.setEmail(user.getEmail());
                 response.setUser(Map.of(
                         "id", user.getId(),
-                        "username", user.getOwnerName(),
+                    "username", loginUsername,
                         "name", user.getOwnerName(),
                         "email", user.getEmail(),
                         "role", user.getRole(),
@@ -115,13 +117,14 @@ public class LoginController {
             }
 
             LoginResponse response = new LoginResponse(false, "MFA verification required");
+                String loginUsername = resolveLoginUsername(user);
             response.setRequiresMfa(true);
-            response.setUsername(user.getOwnerName());
+                response.setUsername(loginUsername);
             response.setRole(user.getRole());
             response.setEmail(user.getEmail());
             response.setUser(Map.of(
                     "id", user.getId(),
-                    "username", user.getOwnerName(),
+                    "username", loginUsername,
                     "name", user.getOwnerName(),
                     "email", user.getEmail(),
                     "role", user.getRole(),
@@ -143,8 +146,9 @@ public class LoginController {
                 .build();
 
         Map<String, Object> userPayload = new HashMap<>();
+        String loginUsername = resolveLoginUsername(user);
         userPayload.put("id", user.getId());
-        userPayload.put("username", user.getOwnerName());
+        userPayload.put("username", loginUsername);
         userPayload.put("name", user.getOwnerName());
         userPayload.put("email", user.getEmail());
         userPayload.put("role", user.getRole());
@@ -156,7 +160,7 @@ public class LoginController {
         response.setAccessToken(accessToken);
         response.setRefreshToken(refreshToken);
         response.setTokenType("Bearer");
-        response.setUsername(user.getOwnerName());
+        response.setUsername(loginUsername);
         response.setRole(user.getRole());
         response.setEmail(user.getEmail());
         response.setUser(userPayload);
@@ -168,18 +172,45 @@ public class LoginController {
                 .body(response);
     }
 
-    private Optional<User> findUserByLoginIdentifier(String username) {
-        if (username == null || username.isBlank()) {
+    private Optional<User> findUserByLoginIdentifier(String loginIdentifier) {
+        if (loginIdentifier == null || loginIdentifier.isBlank()) {
             return Optional.empty();
         }
 
-        Optional<User> userByEmail = userRepository.findByEmail(username);
+        String trimmedIdentifier = loginIdentifier.trim();
+        String normalizedUsername = trimmedIdentifier.toLowerCase(Locale.ROOT);
+
+        Optional<User> userByUsername = userRepository.findByUsername(normalizedUsername);
+        if (userByUsername != null && userByUsername.isPresent()) {
+            return ensureTenant(userByUsername.get());
+        }
+
+        Optional<User> userByEmail = userRepository.findByEmail(trimmedIdentifier);
+        if (!userByEmail.isPresent()) {
+            userByEmail = userRepository.findByEmail(trimmedIdentifier.toLowerCase(Locale.ROOT));
+        }
         if (userByEmail.isPresent()) {
             return ensureTenant(userByEmail.get());
         }
 
-        return userRepository.findByOwnerName(username)
-                .flatMap(this::ensureTenant);
+        return Optional.empty();
+    }
+
+    private String resolveLoginIdentifier(String username, String email) {
+        if (username != null && !username.isBlank()) {
+            return username;
+        }
+        if (email != null && !email.isBlank()) {
+            return email;
+        }
+        return null;
+    }
+
+    private String resolveLoginUsername(User user) {
+        if (user.getUsername() != null && !user.getUsername().isBlank()) {
+            return user.getUsername();
+        }
+        return user.getEmail();
     }
 
     private Optional<User> ensureTenant(User user) {
