@@ -70,8 +70,12 @@ public class InvoiceItem {
 
     // 👈 Auto-calculate item totals
     public void calculateTotals() {
-        this.itemSubtotal = this.price.multiply(BigDecimal.valueOf(this.qty));
-        this.itemGst = this.itemSubtotal.multiply(BigDecimal.valueOf(this.gstRate))
+        BigDecimal safePrice = this.price == null ? BigDecimal.ZERO : this.price;
+        int safeQty = this.qty == null ? 0 : this.qty;
+        int safeGstRate = this.gstRate == null ? 0 : this.gstRate;
+
+        this.itemSubtotal = safePrice.multiply(BigDecimal.valueOf(safeQty));
+        this.itemGst = this.itemSubtotal.multiply(BigDecimal.valueOf(safeGstRate))
                 .divide(BigDecimal.valueOf(100), 2, BigDecimal.ROUND_HALF_UP);
         this.itemTotal = this.itemSubtotal.add(this.itemGst);
     }

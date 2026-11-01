@@ -9,7 +9,9 @@ import java.time.LocalDate;
 import java.util.List;
 
 @Entity
-@Table(name = "invoices")
+@Table(name = "invoices", uniqueConstraints = {
+    @UniqueConstraint(name = "uk_invoices_tenant_invoice_no", columnNames = {"tenant_id", "invoice_no"})
+})
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Invoice {
     public enum InvoiceStatus {
@@ -24,7 +26,7 @@ public class Invoice {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(unique = true)
+    @Column(name = "invoice_no", nullable = false)
     private String invoiceNo;
 
     private String customerName;
@@ -72,7 +74,7 @@ public class Invoice {
     @Transient
     private Long userId;
 
-    @Transient
+    @Column(name = "customer_email", length = 255)
     private String customerEmail;
 
     // Constructors
@@ -168,5 +170,39 @@ public class Invoice {
     public void setStatus(InvoiceStatus status) { this.status = status == null ? InvoiceStatus.PENDING : status; }
     public Tenant getTenant() { return tenant; }
     public void setTenant(Tenant tenant) { this.tenant = tenant; }
+
+    public static class ItemStub {
+        private Long productId;
+        private String name;
+        private Integer qty;
+        private BigDecimal price;
+        private Integer gstRate;
+
+        public Long getProductId() { return productId; }
+        public void setProductId(Long productId) { this.productId = productId; }
+        public void setProductId(int productId) { this.productId = (long) productId; }
+
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+
+        public Integer getQty() { return qty; }
+        public void setQty(Integer qty) { this.qty = qty; }
+
+        public BigDecimal getPrice() { return price; }
+        public void setPrice(BigDecimal price) { this.price = price; }
+
+        public Integer getGstRate() { return gstRate; }
+        public void setGstRate(Integer gstRate) { this.gstRate = gstRate; }
+
+        public InvoiceItem toInvoiceItem() {
+            InvoiceItem item = new InvoiceItem();
+            item.setProductId(productId);
+            item.setName(name);
+            item.setQty(qty);
+            item.setPrice(price);
+            item.setGstRate(gstRate);
+            return item;
+        }
+    }
 
 }

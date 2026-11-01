@@ -30,7 +30,7 @@ public class User {
     private String email;
 
     @Column(nullable = false)
-    private String passwordHash;  // 👈 BCrypt encrypted
+    private String passwordHash;  // Secure password hash (Argon2id)
 
     private String phone;
     private String gstin;  // Retailer

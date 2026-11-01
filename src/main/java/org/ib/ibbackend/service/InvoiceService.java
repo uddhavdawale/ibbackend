@@ -11,12 +11,14 @@ import org.ib.ibbackend.repository.InvoiceItemRepository;
 import org.ib.ibbackend.repository.InvoiceRepository;
 import org.ib.ibbackend.repository.ProductRepository;
 import org.ib.ibbackend.repository.SequenceRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import java.util.stream.Collectors;
 import java.math.RoundingMode;  // For divide()
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.Year;
@@ -28,6 +30,7 @@ public class InvoiceService {
     @Autowired private InvoiceItemRepository itemRepo;
     @Autowired private ProductRepository productRepo;
     @Autowired private SequenceRepository seqRepo;
+    @Autowired(required = false) private InventorySecurityService inventorySecurityService;
 
     public Invoice createInvoice(InvoiceRequest req) {
         // 1. Generate invoiceNo
@@ -37,13 +40,25 @@ public class InvoiceService {
 
                 // 2-4. Rest unchanged...
                 for (InvoiceItem item : req.getItems()) {
-                    Product p = productRepo.findById(item.getProductId())
-                            .orElseThrow(() -> new EntityNotFoundException("Product not found: " + item.getProductId()));
-                    if (p.getQuantity() < item.getQty()) {
-                        throw new RuntimeException("Insufficient stock for " + item.getName());
+                    if (inventorySecurityService != null) {
+                        inventorySecurityService.applyMovement(
+                                item.getProductId(),
+                                -item.getQty(),
+                                org.ib.ibbackend.entity.InventoryMovement.MovementType.SALE,
+                                "INVOICE",
+                                invoiceNo,
+                                "Stock deducted for GST invoice sale",
+                                false
+                        );
+                    } else {
+                        Product p = productRepo.findById(item.getProductId())
+                                .orElseThrow(() -> new EntityNotFoundException("Product not found: " + item.getProductId()));
+                        if (p.getQuantity() < item.getQty()) {
+                            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Insufficient stock for " + item.getName());
+                        }
+                        p.setQuantity(p.getQuantity() - item.getQty());
+                        productRepo.save(p);
                     }
-                    p.setQuantity(p.getQuantity() - item.getQty());
-                    productRepo.save(p);
                 }
 
         BigDecimal subtotal = req.getItems().stream()

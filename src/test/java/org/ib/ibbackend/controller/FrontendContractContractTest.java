@@ -18,7 +18,7 @@ import org.ib.ibbackend.service.RefreshTokenService;
 import org.ib.ibbackend.service.SequenceService;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -58,12 +58,12 @@ class FrontendContractContractTest {
     void loginPayloadShouldIncludeTenantAndBusinessMetadata() {
         AuthController controller = new AuthController();
         UserRepository userRepo = mock(UserRepository.class);
-        BCryptPasswordEncoder bcrypt = new BCryptPasswordEncoder();
+        Argon2PasswordEncoder argon2 = Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
         JwtService jwtService = mock(JwtService.class);
         RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
 
         ReflectionTestUtils.setField(controller, "userRepo", userRepo);
-        ReflectionTestUtils.setField(controller, "passwordSecurityService", new PasswordSecurityService(bcrypt));
+        ReflectionTestUtils.setField(controller, "passwordSecurityService", new PasswordSecurityService(argon2));
         ReflectionTestUtils.setField(controller, "jwtService", jwtService);
         ReflectionTestUtils.setField(controller, "refreshTokenService", refreshTokenService);
 
@@ -77,7 +77,7 @@ class FrontendContractContractTest {
         user.setOwnerName("Owner");
         user.setEmail("owner@example.com");
         user.setBusinessName("Demo Store");
-        user.setPasswordHash(bcrypt.encode("secret"));
+        user.setPasswordHash(argon2.encode("secret"));
         user.setRole("STORE_ADMIN");
         user.setTenant(tenant);
 
@@ -191,7 +191,7 @@ class FrontendContractContractTest {
     void refreshTokenFailureShouldReturnUnauthorized() {
         AuthController controller = new AuthController();
         ReflectionTestUtils.setField(controller, "userRepo", mock(UserRepository.class));
-        ReflectionTestUtils.setField(controller, "passwordSecurityService", new PasswordSecurityService(new BCryptPasswordEncoder()));
+        ReflectionTestUtils.setField(controller, "passwordSecurityService", new PasswordSecurityService(Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8()));
         ReflectionTestUtils.setField(controller, "jwtService", mock(JwtService.class));
         ReflectionTestUtils.setField(controller, "refreshTokenService", mock(RefreshTokenService.class));
 

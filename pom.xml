@@ -20,6 +20,7 @@
     <properties>
         <java.version>17</java.version>  <!-- Java 17 ✅ -->
         <jjwt.version>0.11.5</jjwt.version> <!-- Latest stable -->
+        <bouncycastle.version>1.78.1</bouncycastle.version>
     </properties>
 
     <dependencies>
@@ -46,10 +47,15 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- Security (BCrypt) -->
+        <!-- Security -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>${bouncycastle.version}</version>
         </dependency>
 
         <!-- Mail support for OTP MFA -->

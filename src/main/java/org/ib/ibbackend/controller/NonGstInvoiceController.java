@@ -40,4 +40,9 @@ public class NonGstInvoiceController {
     ) {
         return ResponseEntity.ok(nonGstInvoiceService.listNonGstInvoices(page, size, search, billType));
     }
+
+    @PostMapping("/{id}/cancel")
+    public ResponseEntity<Map<String, Object>> cancelSellOrder(@PathVariable Long id) {
+        return ResponseEntity.ok(nonGstInvoiceService.cancelNonGstInvoice(id));
+    }
 }

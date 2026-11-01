@@ -78,4 +78,12 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     Page<Invoice> findBySearchAndTenantId(@Param("tenantId") Long tenantId,
                                          @Param("search") String search,
                                          Pageable pageable);
+
+    @Query("SELECT i FROM Invoice i WHERE i.tenant.id = :tenantId AND LOWER(i.customerPhone) = LOWER(:phone)")
+    List<Invoice> findByTenantIdAndCustomerPhone(@Param("tenantId") Long tenantId,
+                                                @Param("phone") String phone);
+
+        @Query("SELECT i FROM Invoice i WHERE i.tenant.id = :tenantId AND LOWER(i.customerEmail) = LOWER(:email)")
+        List<Invoice> findByTenantIdAndCustomerEmail(@Param("tenantId") Long tenantId,
+                                                                                                @Param("email") String email);
 }

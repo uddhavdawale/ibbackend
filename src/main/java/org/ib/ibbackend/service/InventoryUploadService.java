@@ -6,11 +6,13 @@ import com.opencsv.CSVReader;
 import org.apache.poi.ss.usermodel.*;
 import org.ib.ibbackend.dto.InventoryUploadResult;
 import org.ib.ibbackend.dto.InventoryUploadRow;
+import org.ib.ibbackend.entity.InventoryMovement;
 import org.ib.ibbackend.entity.Product;
 import org.ib.ibbackend.entity.Tenant;
 import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.exception.ValidationException;
 import org.ib.ibbackend.filter.TenantContext;
+import org.ib.ibbackend.repository.InventoryMovementRepository;
 import org.ib.ibbackend.repository.ProductRepository;
 import org.ib.ibbackend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,16 +48,25 @@ public class InventoryUploadService {
 
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
+    private final InventoryMovementRepository movementRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public InventoryUploadService(ProductRepository productRepository) {
-        this(productRepository, null);
+        this(productRepository, null, null);
+    }
+
+    public InventoryUploadService(ProductRepository productRepository,
+                                  UserRepository userRepository) {
+        this(productRepository, userRepository, null);
     }
 
     @Autowired
-    public InventoryUploadService(ProductRepository productRepository, UserRepository userRepository) {
+    public InventoryUploadService(ProductRepository productRepository,
+                                  UserRepository userRepository,
+                                  InventoryMovementRepository movementRepository) {
         this.productRepository = productRepository;
         this.userRepository = userRepository;
+        this.movementRepository = movementRepository;
     }
 
     @Transactional
@@ -120,6 +131,10 @@ public class InventoryUploadService {
                 existingProduct = productRepository.findBySku(sku).orElse(null);
             }
 
+            int beforeQty = existingProduct != null && existingProduct.getQuantity() != null
+                    ? existingProduct.getQuantity()
+                    : 0;
+
             Product product = existingProduct != null ? existingProduct : new Product();
             product.setName(row.getProduct().trim());
             product.setSku(sku);
@@ -141,6 +156,24 @@ public class InventoryUploadService {
             if (saved == null) {
                 saved = product;
             }
+
+            int afterQty = saved.getQuantity() == null ? 0 : saved.getQuantity();
+            int deltaQty = afterQty - beforeQty;
+            if (deltaQty != 0 && movementRepository != null) {
+                InventoryMovement movement = new InventoryMovement();
+                movement.setProduct(saved);
+                movement.setTenant(saved.getTenant());
+                movement.setUser(authenticatedUser);
+                movement.setMovementType(InventoryMovement.MovementType.UPLOAD);
+                movement.setDeltaQty(deltaQty);
+                movement.setBeforeQty(beforeQty);
+                movement.setAfterQty(afterQty);
+                movement.setReferenceType("INVENTORY_UPLOAD");
+                movement.setReferenceId(source == null ? "upload" : source);
+                movement.setNote("Stock updated via inventory upload");
+                movementRepository.save(movement);
+            }
+
             if (existingProduct == null) {
                 created++;
             } else {

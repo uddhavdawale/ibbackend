@@ -1,6 +1,8 @@
 package org.ib.ibbackend.security;
 
 import org.ib.ibbackend.filter.JwtAuthFilter;
+import org.ib.ibbackend.filter.RequestContextFilter;
+import org.ib.ibbackend.filter.SimpleRateLimitFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
@@ -9,9 +11,11 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -26,17 +30,28 @@ public class SecurityConfig {
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(12);
+        return Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http, JwtAuthFilter jwtAuthFilter) throws Exception {
+        public SecurityFilterChain filterChain(HttpSecurity http,
+                           JwtAuthFilter jwtAuthFilter,
+                           RequestContextFilter requestContextFilter,
+                           SimpleRateLimitFilter simpleRateLimitFilter,
+                           AccessDeniedHandler accessDeniedHandler,
+                           AuthenticationEntryPoint authenticationEntryPoint) throws Exception {
         log.info("Initializing security filter chain for stateless JWT authentication");
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .addFilterBefore(requestContextFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(simpleRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+            .exceptionHandling(ex -> ex
+                .accessDeniedHandler(accessDeniedHandler)
+                .authenticationEntryPoint(authenticationEntryPoint)
+            )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/api/login",
@@ -48,15 +63,6 @@ public class SecurityConfig {
                                 "/api/mfa/**",
                                 "/api/signup",
                                 "/api/register",
-                                "/api/products",
-                                "/api/products/**",
-                                "/api/dashboard",
-                                "/api/dashboard/**",
-                                "/api/sales/**",
-                                "/api/invoices",
-                                "/api/invoices/**",
-                                "/api/gst",
-                                "/api/gst/**",
                                 "/error"
                         ).permitAll()
                         .anyRequest().authenticated()

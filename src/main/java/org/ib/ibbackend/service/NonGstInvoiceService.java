@@ -11,6 +11,7 @@ import org.ib.ibbackend.filter.TenantContext;
 import org.ib.ibbackend.repository.NonGstInvoiceRepository;
 import org.ib.ibbackend.repository.ProductRepository;
 import org.ib.ibbackend.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -41,6 +42,28 @@ public class NonGstInvoiceService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final SequenceService sequenceService;
+    private final AuditLogService auditLogService;
+    private final InventorySecurityService inventorySecurityService;
+    private final CustomerProfileService customerProfileService;
+
+    @Autowired
+    public NonGstInvoiceService(
+            NonGstInvoiceRepository nonGstInvoiceRepository,
+            ProductRepository productRepository,
+            UserRepository userRepository,
+            SequenceService sequenceService,
+            AuditLogService auditLogService,
+            InventorySecurityService inventorySecurityService,
+            CustomerProfileService customerProfileService
+    ) {
+        this.nonGstInvoiceRepository = nonGstInvoiceRepository;
+        this.productRepository = productRepository;
+        this.userRepository = userRepository;
+        this.sequenceService = sequenceService;
+        this.auditLogService = auditLogService;
+        this.inventorySecurityService = inventorySecurityService;
+        this.customerProfileService = customerProfileService;
+    }
 
     public NonGstInvoiceService(
             NonGstInvoiceRepository nonGstInvoiceRepository,
@@ -48,10 +71,7 @@ public class NonGstInvoiceService {
             UserRepository userRepository,
             SequenceService sequenceService
     ) {
-        this.nonGstInvoiceRepository = nonGstInvoiceRepository;
-        this.productRepository = productRepository;
-        this.userRepository = userRepository;
-        this.sequenceService = sequenceService;
+        this(nonGstInvoiceRepository, productRepository, userRepository, sequenceService, null, null, null);
     }
 
     @Transactional
@@ -98,11 +118,6 @@ public class NonGstInvoiceService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Qty must be greater than zero");
             }
 
-            int remaining = (product.getQuantity() == null ? 0 : product.getQuantity()) - qty;
-            if (remaining < 0) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Insufficient stock for " + product.getName());
-            }
-
             BigDecimal price = requestItem.getPrice() == null ? BigDecimal.ZERO : requestItem.getPrice();
             if (price.compareTo(BigDecimal.ZERO) <= 0) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Item price must be positive");
@@ -131,8 +146,25 @@ public class NonGstInvoiceService {
             items.add(item);
 
             subtotal = subtotal.add(itemSubtotal);
-            product.setQuantity(remaining);
-            productRepository.save(product);
+            if (inventorySecurityService != null) {
+                inventorySecurityService.applyMovement(
+                        product.getId(),
+                        -qty,
+                        org.ib.ibbackend.entity.InventoryMovement.MovementType.SALE,
+                        "NON_GST_INVOICE",
+                        invoiceNo,
+                        "Stock deducted for non-GST invoice sale",
+                        false
+                );
+            } else {
+                int currentQty = product.getQuantity() == null ? 0 : product.getQuantity();
+                int remaining = currentQty - qty;
+                if (remaining < 0) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Insufficient stock for " + product.getName());
+                }
+                product.setQuantity(remaining);
+                productRepository.save(product);
+            }
         }
 
         subtotal = subtotal.setScale(2, RoundingMode.HALF_UP);
@@ -150,7 +182,14 @@ public class NonGstInvoiceService {
         invoice.setPaidAmount(paidAmount.setScale(2, RoundingMode.HALF_UP));
 
         invoice.setItems(items);
-        return nonGstInvoiceRepository.save(invoice);
+        NonGstInvoice saved = nonGstInvoiceRepository.save(invoice);
+        if (customerProfileService != null) {
+            customerProfileService.syncFromNonGstInvoice(saved);
+        }
+        if (auditLogService != null) {
+            auditLogService.success("INVOICE_CREATE", saved.getInvoiceNo(), "Non-GST invoice created");
+        }
+        return saved;
     }
 
     public Page<Map<String, Object>> listNonGstInvoices(int page, int size, String search, String billType) {
@@ -166,8 +205,15 @@ public class NonGstInvoiceService {
             safeSearch = safeSearch.substring(0, MAX_SEARCH_LENGTH);
         }
 
-        if (billType != null && !billType.isBlank() && !"non-gst".equalsIgnoreCase(billType.trim())) {
-            return Page.empty();
+        if (billType != null && !billType.isBlank()) {
+            String requested = billType.trim().toLowerCase();
+            if ("gst".equals(requested) || "all".equals(requested) || "all-invoices".equals(requested)
+                    || "combined".equals(requested) || "both".equals(requested)) {
+                // This endpoint is intentionally scoped to non-GST invoices, but the UI may request a combined view.
+                // Keep the tenant filtering and return the current non-GST page instead of hard-emptying it.
+            } else if (!"non-gst".equals(requested) && !"non_gst".equals(requested) && !"non gst".equals(requested)) {
+                return Page.empty();
+            }
         }
 
         Pageable pageable = PageRequest.of(safePage, safeSize, Sort.by("id").descending());
@@ -218,6 +264,69 @@ public class NonGstInvoiceService {
             }).toList());
             return data;
         });
+    }
+
+    @Transactional
+    public Map<String, Object> cancelNonGstInvoice(Long id) {
+        Long tenantId = TenantContext.getCurrentTenant();
+        if (tenantId == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+
+        NonGstInvoice invoice = nonGstInvoiceRepository.findByIdAndTenantId(id, tenantId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Sell order not found"));
+
+        if ("CANCELLED".equalsIgnoreCase(invoice.getStatus())) {
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("success", true);
+            payload.put("message", "Sell order already cancelled");
+            payload.put("invoiceId", invoice.getId());
+            payload.put("invoiceNo", invoice.getInvoiceNo());
+            payload.put("status", "CANCELLED");
+            return payload;
+        }
+
+        List<NonGstInvoiceItem> items = invoice.getItems() == null ? List.of() : invoice.getItems();
+        for (NonGstInvoiceItem item : items) {
+            Long productId = item.getProduct() != null ? item.getProduct().getId() : null;
+            if (productId == null) {
+                continue;
+            }
+            int restoreQty = item.getQty() == null ? 0 : item.getQty();
+            if (inventorySecurityService != null) {
+                inventorySecurityService.applyMovement(
+                        productId,
+                        restoreQty,
+                        org.ib.ibbackend.entity.InventoryMovement.MovementType.SALE_CANCEL,
+                        "NON_GST_INVOICE_CANCEL",
+                        invoice.getInvoiceNo(),
+                        "Stock restored for non-GST sell order cancellation",
+                        false
+                );
+                    } else {
+                    Product product = productRepository.findByIdAndTenantIdForUpdate(productId, tenantId)
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Product not found for tenant: " + productId));
+                    int currentQty = product.getQuantity() == null ? 0 : product.getQuantity();
+                    product.setQuantity(currentQty + restoreQty);
+                    productRepository.save(product);
+            }
+        }
+
+        invoice.setStatus("CANCELLED");
+        invoice.setPaymentStatus("CANCELLED");
+        NonGstInvoice saved = nonGstInvoiceRepository.save(invoice);
+        if (auditLogService != null) {
+            auditLogService.success("INVOICE_CANCEL", saved.getInvoiceNo(), "Non-GST sell order cancelled and stock restored");
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("success", true);
+        payload.put("message", "Sell order cancelled successfully");
+        payload.put("invoiceId", saved.getId());
+        payload.put("invoiceNo", saved.getInvoiceNo());
+        payload.put("status", "CANCELLED");
+        payload.put("restockedItems", items.size());
+        return payload;
     }
 
     private User resolveCurrentUser() {

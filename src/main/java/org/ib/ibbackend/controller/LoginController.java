@@ -7,6 +7,7 @@ import org.ib.ibbackend.entity.Tenant;
 import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.repository.TenantRepository;
 import org.ib.ibbackend.repository.UserRepository;
+import org.ib.ibbackend.service.AuditLogService;
 import org.ib.ibbackend.service.FirebaseTokenVerifierService;
 import org.ib.ibbackend.service.JwtService;
 import org.ib.ibbackend.service.MailMfaService;
@@ -48,11 +49,27 @@ public class LoginController {
     @Autowired(required = false)
     private FirebaseTokenVerifierService firebaseTokenVerifierService;
 
+    @Autowired(required = false)
+    private AuditLogService auditLogService;
+
+    private void auditSuccess(String action, String resourceId, String detail) {
+        if (auditLogService != null) {
+            auditLogService.success(action, resourceId, detail);
+        }
+    }
+
+    private void auditFailure(String action, String resourceId, String detail) {
+        if (auditLogService != null) {
+            auditLogService.failure(action, resourceId, detail);
+        }
+    }
+
     @PostMapping(path = {"/api/login", "/login"})
     public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) {
         Optional<User> userOpt = findUserByLoginIdentifier(request.getUsername());
 
         if (userOpt.isEmpty()) {
+            auditFailure("LOGIN", "N/A", "Unknown username");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(new LoginResponse(false, "Invalid username or password"));
         }
@@ -60,6 +77,7 @@ public class LoginController {
         User user = userOpt.get();
 
         if (!passwordSecurityService.matches(request.getPassword(), user.getPasswordHash())) {
+            auditFailure("LOGIN", String.valueOf(user.getId()), "Invalid password");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(new LoginResponse(false, "Invalid username or password"));
         }
@@ -69,6 +87,7 @@ public class LoginController {
 
         if (firebaseMfaEnabled || mailMfaEnabled) {
             if (firebaseMfaEnabled) {
+                auditSuccess("MFA_CHALLENGE", String.valueOf(user.getId()), "Firebase MFA challenge required");
                 LoginResponse response = new LoginResponse(false, "MFA verification required");
                 response.setRequiresMfa(true);
                 response.setUsername(user.getOwnerName());
@@ -87,7 +106,10 @@ public class LoginController {
 
             try {
                 mailMfaService.issueOtp(user.getEmail());
+                auditSuccess("MFA_CHALLENGE", String.valueOf(user.getId()), "Mail OTP challenge issued");
             } catch (RuntimeException ex) {
+                ex.printStackTrace();
+                auditFailure("MFA_CHALLENGE", String.valueOf(user.getId()), "MFA email could not be sent");
                 return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                         .body(new LoginResponse(false, "MFA email could not be sent. Check SMTP configuration."));
             }
@@ -138,6 +160,8 @@ public class LoginController {
         response.setRole(user.getRole());
         response.setEmail(user.getEmail());
         response.setUser(userPayload);
+
+        auditSuccess("LOGIN", String.valueOf(user.getId()), "Login successful");
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, refreshCookie.toString())

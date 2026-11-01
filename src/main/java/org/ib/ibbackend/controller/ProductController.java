@@ -1,11 +1,15 @@
 package org.ib.ibbackend.controller;
 
 
+import org.ib.ibbackend.dto.ProductUpsertRequest;
 import org.ib.ibbackend.dto.ProductResponse;
+import org.ib.ibbackend.entity.InventoryMovement;
 import org.ib.ibbackend.entity.Product;
 import org.ib.ibbackend.entity.Tenant;
 import org.ib.ibbackend.filter.TenantContext;
 import org.ib.ibbackend.repository.ProductRepository;
+import org.ib.ibbackend.service.AuditLogService;
+import org.ib.ibbackend.service.InventorySecurityService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -24,8 +28,22 @@ import java.util.Map;
 @RequestMapping("/api/products")
 public class ProductController {
 
+    private static final int MAX_PRODUCTS_PAGE_SIZE = 200;
+
     @Autowired
     private ProductRepository productRepository;
+
+    @Autowired
+    private InventorySecurityService inventorySecurityService;
+
+    @Autowired(required = false)
+    private AuditLogService auditLogService;
+
+    private void auditSuccess(String action, String resourceId, String detail) {
+        if (auditLogService != null) {
+            auditLogService.success(action, resourceId, detail);
+        }
+    }
 
     @GetMapping
     public ResponseEntity<Page<ProductResponse>> getProducts(
@@ -44,7 +62,9 @@ public class ProductController {
                 ? Sort.by(sortBy).descending()
                 : Sort.by(sortBy).ascending();
 
-        Pageable pageable = PageRequest.of(page, size, sort);
+        int safePage = Math.max(page, 0);
+        int safeSize = size <= 0 ? 50 : Math.min(size, MAX_PRODUCTS_PAGE_SIZE);
+        Pageable pageable = PageRequest.of(safePage, safeSize, sort);
 
         Page<Product> products;
 
@@ -79,22 +99,36 @@ public class ProductController {
         );
     }
     @PostMapping
-    public ResponseEntity<?> addProduct(@RequestBody Product product) {
+    public ResponseEntity<?> addProduct(@RequestBody ProductUpsertRequest product) {
         Long tenantId = TenantContext.getCurrentTenant();
         if (tenantId == null) {
             throw new AccessDeniedException("Access denied");
         }
 
-        String resolvedCode = resolveCatalogCode(product);
+        Product entity = new Product();
+        entity.setName(product.getName());
+        entity.setSku(product.getSku());
+        entity.setHsnSac(product.getHsnSac());
+        entity.setQuantity(product.getQuantity());
+        entity.setMinStock(product.getMinStock());
+        entity.setPrice(product.getPrice());
+        entity.setMrp(product.getMrp());
+        entity.setSetSize(product.getSetSize());
+        entity.setPoNumber(product.getPoNumber());
+        entity.setSalesCount(product.getSalesCount());
+        entity.setCategory(product.getCategory());
+        entity.setExpiryDate(product.getExpiryDate());
+
+        String resolvedCode = resolveCatalogCode(entity);
         if (resolvedCode == null) {
             return ResponseEntity.badRequest().body(Map.of(
                     "success", false,
                     "message", "HSN/SAC is required"
             ));
         }
-        product.setSku(resolvedCode);
-        if (normalizeSku(product.getHsnSac()) == null) {
-            product.setHsnSac(resolvedCode);
+        entity.setSku(resolvedCode);
+        if (normalizeSku(entity.getHsnSac()) == null) {
+            entity.setHsnSac(resolvedCode);
         }
 
         if (productRepository.existsBySkuAndTenantId(resolvedCode, tenantId)) {
@@ -106,33 +140,62 @@ public class ProductController {
 
         Tenant tenant = new Tenant();
         tenant.setId(Math.toIntExact(tenantId));
-        product.setTenant(tenant);
+        entity.setTenant(tenant);
 
-        if (product.getCategory() == null || product.getCategory().isBlank()) {
-            product.setCategory("General");
+        if (entity.getCategory() == null || entity.getCategory().isBlank()) {
+            entity.setCategory("General");
         }
-        if (product.getMrp() == null) {
-            product.setMrp(product.getPrice());
+        if (entity.getMrp() == null) {
+            entity.setMrp(entity.getPrice());
         }
-        if (product.getSetSize() == null || product.getSetSize() <= 0) {
-            product.setSetSize(1);
+        if (entity.getSetSize() == null || entity.getSetSize() <= 0) {
+            entity.setSetSize(1);
         }
-        if (product.getSalesCount() == null || product.getSalesCount() < 0) {
-            product.setSalesCount(0);
+        if (entity.getSalesCount() == null || entity.getSalesCount() < 0) {
+            entity.setSalesCount(0);
+        }
+        if (entity.getQuantity() == null || entity.getQuantity() < 0) {
+            entity.setQuantity(0);
         }
 
-        Product savedProduct = productRepository.save(product);
+        Product savedProduct = productRepository.save(entity);
+        if (savedProduct.getQuantity() != null && savedProduct.getQuantity() > 0) {
+            inventorySecurityService.applyMovement(
+                    savedProduct.getId(),
+                    savedProduct.getQuantity(),
+                    InventoryMovement.MovementType.ADJUSTMENT,
+                    "PRODUCT_CREATE",
+                    String.valueOf(savedProduct.getId()),
+                    "Initial stock set during product creation",
+                    false
+            );
+        }
+        auditSuccess("INVENTORY_ADJUSTMENT", String.valueOf(savedProduct.getId()), "Product created");
         return ResponseEntity.status(HttpStatus.CREATED).body(savedProduct);
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Product> updateProduct(@PathVariable Long id, @RequestBody Product product) {
+    public ResponseEntity<Product> updateProduct(@PathVariable Long id, @RequestBody ProductUpsertRequest product) {
         Long tenantId = TenantContext.getCurrentTenant();
         if (tenantId == null) {
             throw new AccessDeniedException("Access denied");
         }
 
-        String resolvedCode = resolveCatalogCode(product);
+        Product requestData = new Product();
+        requestData.setName(product.getName());
+        requestData.setSku(product.getSku());
+        requestData.setHsnSac(product.getHsnSac());
+        requestData.setQuantity(product.getQuantity());
+        requestData.setMinStock(product.getMinStock());
+        requestData.setPrice(product.getPrice());
+        requestData.setMrp(product.getMrp());
+        requestData.setSetSize(product.getSetSize());
+        requestData.setPoNumber(product.getPoNumber());
+        requestData.setSalesCount(product.getSalesCount());
+        requestData.setCategory(product.getCategory());
+        requestData.setExpiryDate(product.getExpiryDate());
+
+        String resolvedCode = resolveCatalogCode(requestData);
         if (resolvedCode == null) {
             return ResponseEntity.badRequest().build();
         }
@@ -143,21 +206,43 @@ public class ProductController {
 
         return productRepository.findByIdAndTenantId(id, tenantId)
                 .map(existing -> {
-                    existing.setName(product.getName());
+                    Integer oldQty = existing.getQuantity();
+                    existing.setName(requestData.getName());
                     existing.setSku(resolvedCode);
-                    existing.setQuantity(product.getQuantity());
-                    existing.setMinStock(product.getMinStock());
-                    existing.setExpiryDate(product.getExpiryDate());
-                    existing.setPrice(product.getPrice());
-                    existing.setMrp(product.getMrp() != null ? product.getMrp() : product.getPrice());
-                    existing.setHsnSac(normalizeSku(product.getHsnSac()) != null ? normalizeSku(product.getHsnSac()) : resolvedCode);
-                    existing.setSetSize(product.getSetSize() == null || product.getSetSize() <= 0 ? 1 : product.getSetSize());
-                    existing.setPoNumber(product.getPoNumber());
-                    if (product.getSalesCount() != null && product.getSalesCount() >= 0) {
-                        existing.setSalesCount(product.getSalesCount());
+                    existing.setMinStock(requestData.getMinStock());
+                    existing.setExpiryDate(requestData.getExpiryDate());
+                    existing.setPrice(requestData.getPrice());
+                    existing.setMrp(requestData.getMrp() != null ? requestData.getMrp() : requestData.getPrice());
+                    existing.setHsnSac(normalizeSku(requestData.getHsnSac()) != null ? normalizeSku(requestData.getHsnSac()) : resolvedCode);
+                    existing.setSetSize(requestData.getSetSize() == null || requestData.getSetSize() <= 0 ? 1 : requestData.getSetSize());
+                    existing.setPoNumber(requestData.getPoNumber());
+                    if (requestData.getSalesCount() != null && requestData.getSalesCount() >= 0) {
+                        existing.setSalesCount(requestData.getSalesCount());
                     }
-                    existing.setCategory(product.getCategory());
-                    return ResponseEntity.ok(productRepository.save(existing));
+                    existing.setCategory(requestData.getCategory());
+                    Product saved = productRepository.save(existing);
+
+                    int beforeQty = oldQty == null ? 0 : oldQty;
+                    int targetQty = requestData.getQuantity() == null ? beforeQty : requestData.getQuantity();
+                    int delta = targetQty - beforeQty;
+                    if (delta != 0) {
+                        inventorySecurityService.applyMovement(
+                                saved.getId(),
+                                delta,
+                                InventoryMovement.MovementType.ADJUSTMENT,
+                                "PRODUCT_UPDATE",
+                                String.valueOf(saved.getId()),
+                                "Stock adjusted through product update",
+                                false
+                        );
+                    }
+
+                    String detail = "Product updated";
+                    if (oldQty != null && delta != 0) {
+                        detail = "Product quantity adjusted from " + oldQty + " to " + targetQty;
+                    }
+                    auditSuccess("INVENTORY_ADJUSTMENT", String.valueOf(saved.getId()), detail);
+                    return ResponseEntity.ok(saved);
                 })
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -187,7 +272,20 @@ public class ProductController {
 
         return productRepository.findByIdAndTenantId(id, tenantId)
                 .map(existing -> {
+                    int qty = existing.getQuantity() == null ? 0 : existing.getQuantity();
+                    if (qty > 0) {
+                        inventorySecurityService.applyMovement(
+                                existing.getId(),
+                                -qty,
+                                InventoryMovement.MovementType.WRITE_OFF,
+                                "PRODUCT_DELETE",
+                                String.valueOf(existing.getId()),
+                                "Stock written off during product delete",
+                                false
+                        );
+                    }
                     productRepository.delete(existing);
+                    auditSuccess("INVENTORY_WRITE_OFF", String.valueOf(id), "Product deleted");
                     return ResponseEntity.ok().<Void>build();
                 })
                 .orElse(ResponseEntity.notFound().build());

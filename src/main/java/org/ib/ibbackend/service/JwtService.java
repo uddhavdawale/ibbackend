@@ -46,7 +46,7 @@ public class JwtService {
         this.secretKey = Keys.hmacShaKeyFor(resolvedAccessSecret.getBytes(StandardCharsets.UTF_8));
         this.refreshTokenSecretKey = Keys.hmacShaKeyFor(resolvedRefreshSecret.getBytes(StandardCharsets.UTF_8));
         this.accessTokenExpiryMs = accessTokenExpiryMs > 0 ? accessTokenExpiryMs : 30L * 60L * 1000L;
-        this.refreshTokenExpiryMs = refreshTokenExpiryMs > 0 ? refreshTokenExpiryMs : 7L * 24L * 60L * 60L * 1000L;
+        this.refreshTokenExpiryMs = refreshTokenExpiryMs > 0 ? refreshTokenExpiryMs : 1L * 24L * 60L * 60L * 1000L;
     }
 
     private void validateSecretSize(String name, String value, int minimumBytes) {

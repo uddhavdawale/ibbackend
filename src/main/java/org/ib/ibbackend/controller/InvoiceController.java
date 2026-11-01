@@ -1,6 +1,5 @@
 package org.ib.ibbackend.controller;
 
-import jakarta.servlet.http.HttpServletResponse;
 import org.ib.ibbackend.dto.InvoiceRequest;
 import org.ib.ibbackend.entity.Invoice;
 import org.ib.ibbackend.entity.InvoiceItem;
@@ -12,6 +11,8 @@ import org.ib.ibbackend.repository.InvoiceItemRepository;
 import org.ib.ibbackend.repository.InvoiceRepository;
 import org.ib.ibbackend.repository.ProductRepository;
 import org.ib.ibbackend.repository.UserRepository;
+import org.ib.ibbackend.service.AuditLogService;
+import org.ib.ibbackend.service.InventorySecurityService;
 import org.ib.ibbackend.service.SequenceService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,14 +32,17 @@ import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @RestController
 @CrossOrigin(originPatterns  = "*")
 //@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:8080"})
-@RequestMapping("/api/invoices")
+@RequestMapping({"/api/invoices", "/api/orders", "/api/invoice"})
 public class InvoiceController {
     private static final Logger log = LoggerFactory.getLogger(InvoiceController.class);
+    private static final int MAX_INVOICE_PAGE_SIZE = 200;
+    private static final int MAX_INVOICE_SEARCH_LENGTH = 100;
 
     @Autowired
     private InvoiceRepository invoiceRepository;
@@ -55,72 +59,133 @@ public class InvoiceController {
     @Autowired private
     SequenceService seqService;
 
-    public ResponseEntity<?> createInvoice(@RequestBody Invoice invoiceRequest) {
-        try {
-            String invoiceNo = String.format("INV-%d/%04d",
-                    java.time.Year.now().getValue(),
-                    seqService.nextValue("invoice"));
-            invoiceRequest.setInvoiceNo(invoiceNo);
+    @Autowired(required = false)
+    private AuditLogService auditLogService;
+    @Autowired(required = false)
+    private InventorySecurityService inventorySecurityService;
 
-            for (InvoiceItem item : invoiceRequest.getItems()) {
-                Product product = productRepository.findById(item.getProductId())
-                        .orElseThrow(() -> new RuntimeException("Product not found: " + item.getProductId()));
+    @Autowired(required = false)
+    private org.ib.ibbackend.service.CustomerProfileService customerProfileService;
 
-                int newStock = product.getQuantity() - item.getQty();
-                if (newStock < 0) {
-                    return ResponseEntity.badRequest()
-                            .body("Insufficient stock for " + item.getName() + ". Available: " + product.getQuantity());
-                }
-
-                product.setQuantity(newStock);
-                productRepository.save(product);
-            }
-            List<InvoiceItem> invoiceItems = invoiceRequest.getItems().stream()
-                    .map(dto -> {
-                        InvoiceItem item = new InvoiceItem(
-                                dto.getProductId(), dto.getName(), dto.getSku(),
-                                dto.getHsn(), dto.getGstRate(), dto.getPrice(), dto.getQty()
-                        );
-                        return item;
-                    })
-                    .collect(Collectors.toList());
-
-            BigDecimal subtotal = invoiceRequest.getItems().stream()
-                    .map(item -> item.getPrice().multiply(BigDecimal.valueOf(item.getQty())))
-                    .collect(Collectors.reducing(BigDecimal.ZERO, BigDecimal::add));
-
-            BigDecimal gstAmount = invoiceRequest.getItems().stream()
-                    .map(item -> item.getPrice()
-                            .multiply(BigDecimal.valueOf(item.getQty()))
-                            .multiply(BigDecimal.valueOf(item.getGstRate()))
-                            .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP))
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-            BigDecimal grandTotal = subtotal.add(gstAmount);
-
-            Invoice invoice = new Invoice(
-                    invoiceRequest.getInvoiceNo(),
-                    invoiceRequest.getCustomerName(),
-                    invoiceRequest.getCustomerPhone(),
-                    LocalDate.now(),
-                    invoiceRequest.getPaymentMethod(),
-                    subtotal.setScale(2, RoundingMode.HALF_UP),
-                    gstAmount.setScale(2, RoundingMode.HALF_UP),
-                    grandTotal.setScale(2, RoundingMode.HALF_UP),
-                    invoiceRequest.getItems()
-            );
-            for (InvoiceItem item : invoiceItems) {
-                item.setInvoice(invoice);
-            }
-
-            Invoice saved = invoiceRepository.save(invoice);
-            log.info("Invoice created successfully: {} with {} items", saved.getInvoiceNo(), saved.getItems().size());
-            return ResponseEntity.ok(saved);
-
-        } catch (Exception e) {
-            log.error("Error creating invoice", e);
-            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+    private void auditSuccess(String action, String resourceId, String detail) {
+        if (auditLogService != null) {
+            auditLogService.success(action, resourceId, detail);
         }
+    }
+
+    private void auditFailure(String action, String resourceId, String detail) {
+        if (auditLogService != null) {
+            auditLogService.failure(action, resourceId, detail);
+        }
+    }
+
+    private void deductStockForSale(InvoiceItem item, String invoiceNo, Long tenantId) {
+        if (inventorySecurityService != null) {
+            inventorySecurityService.applyMovement(
+                    item.getProductId(),
+                    -item.getQty(),
+                    org.ib.ibbackend.entity.InventoryMovement.MovementType.SALE,
+                    "INVOICE",
+                    invoiceNo,
+                    "Stock deducted for GST invoice sale",
+                    false
+            );
+            return;
+        }
+
+        Optional<Product> tenantScoped = productRepository.findByIdAndTenantIdForUpdate(item.getProductId(), tenantId);
+        if (tenantScoped == null) {
+            tenantScoped = Optional.empty();
+        }
+
+        Product product = tenantScoped.orElseGet(() -> productRepository.findById(item.getProductId())
+            .filter(p -> p.getTenant() == null
+                || p.getTenant().getId() == Math.toIntExact(tenantId))
+            .orElseThrow(() -> new RuntimeException("Product not found for tenant: " + item.getProductId())));
+        int currentQty = product.getQuantity() == null ? 0 : product.getQuantity();
+        int newStock = currentQty - item.getQty();
+        if (newStock < 0) {
+            throw new RuntimeException("Insufficient stock for " + item.getName() + ". Available: " + currentQty);
+        }
+        product.setQuantity(newStock);
+        productRepository.save(product);
+    }
+
+    private void restoreStockOnCancel(InvoiceItem item, String invoiceNo, Long tenantId) {
+        int restoreQty = item.getQty() == null ? 0 : item.getQty();
+        if (inventorySecurityService != null) {
+            inventorySecurityService.applyMovement(
+                    item.getProductId(),
+                    restoreQty,
+                    org.ib.ibbackend.entity.InventoryMovement.MovementType.SALE_CANCEL,
+                    "INVOICE_CANCEL",
+                    invoiceNo,
+                    "Stock restored for GST sell order cancellation",
+                    false
+            );
+            return;
+        }
+
+        Optional<Product> tenantScoped = productRepository.findByIdAndTenantIdForUpdate(item.getProductId(), tenantId);
+        if (tenantScoped == null) {
+            tenantScoped = Optional.empty();
+        }
+
+        Product product = tenantScoped.orElseGet(() -> productRepository.findById(item.getProductId())
+            .filter(p -> p.getTenant() == null
+                || p.getTenant().getId() == Math.toIntExact(tenantId))
+            .orElseThrow(() -> new RuntimeException("Product not found for tenant: " + item.getProductId())));
+        int currentQty = product.getQuantity() == null ? 0 : product.getQuantity();
+        product.setQuantity(currentQty + restoreQty);
+        productRepository.save(product);
+    }
+
+    @PostMapping("/{id}/cancel")
+    @Transactional
+    public ResponseEntity<?> cancelSellOrder(@PathVariable Long id) {
+        Long tenantId = TenantContext.getCurrentTenant();
+        if (tenantId == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Access denied");
+        }
+
+        return invoiceRepository.findByIdAndTenantId(id, tenantId)
+                .map(invoice -> {
+                    if (invoice.getStatus() == Invoice.InvoiceStatus.CANCELLED) {
+                        Map<String, Object> payload = new HashMap<>();
+                        payload.put("success", true);
+                        payload.put("message", "Sell order already cancelled");
+                        payload.put("invoiceId", invoice.getId());
+                        payload.put("invoiceNo", invoice.getInvoiceNo());
+                        payload.put("status", "CANCELLED");
+                        return ResponseEntity.ok(payload);
+                    }
+
+                    List<InvoiceItem> items = invoice.getItems() == null ? List.of() : invoice.getItems();
+                    for (InvoiceItem item : items) {
+                        restoreStockOnCancel(item, invoice.getInvoiceNo(), tenantId);
+                    }
+
+                    invoice.setStatus(Invoice.InvoiceStatus.CANCELLED);
+                    invoice.setPaymentStatus(Invoice.PaymentStatus.CANCELLED);
+                    Invoice saved = invoiceRepository.save(invoice);
+                    auditSuccess("INVOICE_CANCEL", saved.getInvoiceNo(), "GST sell order cancelled and stock restored");
+
+                    Map<String, Object> payload = new HashMap<>();
+                    payload.put("success", true);
+                    payload.put("message", "Sell order cancelled successfully");
+                    payload.put("invoiceId", saved.getId());
+                    payload.put("invoiceNo", saved.getInvoiceNo());
+                    payload.put("status", "CANCELLED");
+                    payload.put("restockedItems", items.size());
+                    return ResponseEntity.ok(payload);
+                })
+                .orElseGet(() -> {
+                    Map<String, Object> payload = new HashMap<>();
+                    payload.put("success", false);
+                    payload.put("message", "Sell order not found");
+                    payload.put("invoiceId", id);
+                    return ResponseEntity.status(404).body(payload);
+                });
     }
 
     @GetMapping
@@ -136,13 +201,20 @@ public class InvoiceController {
             throw new org.springframework.security.access.AccessDeniedException("Access denied");
         }
 
-        log.info("Fetching invoices page={} size={} search={} status={} for tenant={}", page, size, search, status, tenantId);
+        int safePage = Math.max(page, 0);
+        int safeSize = size <= 0 ? 10 : Math.min(size, MAX_INVOICE_PAGE_SIZE);
+        String safeSearch = search == null ? "" : search.trim();
+        if (safeSearch.length() > MAX_INVOICE_SEARCH_LENGTH) {
+            safeSearch = safeSearch.substring(0, MAX_INVOICE_SEARCH_LENGTH);
+        }
+
+        log.info("Fetching invoices page={} size={} search={} status={} for tenant={}", safePage, safeSize, safeSearch, status, tenantId);
         Sort sort = Sort.by("id").descending();
-        Pageable pageable = PageRequest.of(page, size, sort);
+        Pageable pageable = PageRequest.of(safePage, safeSize, sort);
 
         Page<Invoice> invoices;
-        if (!search.isEmpty()) {
-            invoices = invoiceRepository.findBySearchAndTenantId(tenantId, search, pageable);
+        if (!safeSearch.isEmpty()) {
+            invoices = invoiceRepository.findBySearchAndTenantId(tenantId, safeSearch, pageable);
         } else {
             invoices = invoiceRepository.findByTenantId(tenantId, pageable);
         }
@@ -155,9 +227,13 @@ public class InvoiceController {
 
         if (billType != null && !billType.isBlank()) {
             String requested = billType.trim().toLowerCase();
-            if ("gst".equals(requested)) {
-                // This endpoint serves GST invoices only.
-            } else {
+            if ("non-gst".equals(requested) || "non_gst".equals(requested) || "non gst".equals(requested)) {
+                invoices = new org.springframework.data.domain.PageImpl<>(List.of(), pageable, 0);
+            } else if (!"gst".equals(requested)
+                    && !"all".equals(requested)
+                    && !"all-invoices".equals(requested)
+                    && !"combined".equals(requested)
+                    && !"both".equals(requested)) {
                 invoices = new org.springframework.data.domain.PageImpl<>(List.of(), pageable, 0);
             }
         }
@@ -249,16 +325,13 @@ public class InvoiceController {
             String invoiceNo = String.format("INV-%d/%04d",
                     java.time.Year.now().getValue(),
                     seqService.nextValue("invoice"));
+            Long tenantId = TenantContext.getCurrentTenant();
+            if (tenantId == null) {
+                throw new org.springframework.security.access.AccessDeniedException("Access denied");
+            }
 
             for (InvoiceItem item : invoiceRequest.getItems()) {
-                Product product = productRepository.findById(item.getProductId())
-                        .orElseThrow(() -> new RuntimeException("Product not found: " + item.getProductId()));
-                int newStock = product.getQuantity() - item.getQty();
-                if (newStock < 0) {
-                    return ResponseEntity.badRequest().body("Insufficient stock for " + item.getName());
-                }
-                product.setQuantity(newStock);
-                productRepository.save(product);
+                deductStockForSale(item, invoiceNo, tenantId);
             }
 
             List<InvoiceItem> invoiceItems = invoiceRequest.getItems().stream()
@@ -271,17 +344,12 @@ public class InvoiceController {
                     .collect(Collectors.toList());
 
             BigDecimal subtotal = invoiceItems.stream()
-                    .map(InvoiceItem::getItemSubtotal)
+                    .map(item -> item.getItemSubtotal() == null ? BigDecimal.ZERO : item.getItemSubtotal())
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             BigDecimal gstAmount = invoiceItems.stream()
-                    .map(InvoiceItem::getItemGst)
+                    .map(item -> item.getItemGst() == null ? BigDecimal.ZERO : item.getItemGst())
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             BigDecimal grandTotal = subtotal.add(gstAmount);
-
-            Long tenantId = TenantContext.getCurrentTenant();
-            if (tenantId == null) {
-                throw new org.springframework.security.access.AccessDeniedException("Access denied");
-            }
 
             BigDecimal paidAmount = resolvePaidAmount(
                     grandTotal,
@@ -321,12 +389,17 @@ public class InvoiceController {
             }
 
             Invoice saved = invoiceRepository.save(invoice);
-            log.info("Invoice saved successfully: {} with {} items", saved.getInvoiceNo(), saved.getItems().size());
+            if (customerProfileService != null) {
+                customerProfileService.syncFromInvoice(saved);
+            }
+            int savedItemsCount = saved.getItems() == null ? 0 : saved.getItems().size();
+            log.info("Invoice saved successfully: {} with {} items", saved.getInvoiceNo(), savedItemsCount);
+            auditSuccess("INVOICE_CREATE", saved.getInvoiceNo(), "GST invoice created");
             return ResponseEntity.ok(saved);
-
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("Error saving invoice", e);
-            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+            auditFailure("INVOICE_CREATE", "N/A", "Invoice save failed: " + e.getClass().getSimpleName());
+            throw e;
         }
     }
 

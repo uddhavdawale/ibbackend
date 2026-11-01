@@ -11,7 +11,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "non_gst_invoices")
+@Table(name = "non_gst_invoices", uniqueConstraints = {
+    @UniqueConstraint(name = "uk_non_gst_invoices_tenant_invoice_no", columnNames = {"tenant_id", "invoice_no"})
+})
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class NonGstInvoice {
 
@@ -19,7 +21,7 @@ public class NonGstInvoice {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "invoice_no", nullable = false, unique = true, length = 64)
+    @Column(name = "invoice_no", nullable = false, length = 64)
     private String invoiceNo;
 
     @Column(name = "customer_name", nullable = false)

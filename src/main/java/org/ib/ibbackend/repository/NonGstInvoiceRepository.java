@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface NonGstInvoiceRepository extends JpaRepository<NonGstInvoice, Long> {
@@ -21,4 +22,8 @@ public interface NonGstInvoiceRepository extends JpaRepository<NonGstInvoice, Lo
     Page<NonGstInvoice> findBySearchAndTenantId(@Param("tenantId") Long tenantId,
                                                 @Param("search") String search,
                                                 Pageable pageable);
+
+    @Query("SELECT i FROM NonGstInvoice i WHERE i.tenant.id = :tenantId AND LOWER(i.customerPhone) = LOWER(:phone)")
+    List<NonGstInvoice> findByTenantIdAndCustomerPhone(@Param("tenantId") Long tenantId,
+                                                      @Param("phone") String phone);
 }

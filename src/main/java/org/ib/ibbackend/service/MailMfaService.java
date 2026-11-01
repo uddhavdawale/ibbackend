@@ -43,7 +43,7 @@ public class MailMfaService {
         if (isEnabled() && mailSender != null) {
             sendMail(normalizedEmail, otp);
         } else {
-            log.info("Mail MFA is disabled or mail sender is not configured. Generated OTP for {}: {}", normalizedEmail, otp);
+            log.info("Mail MFA is disabled or mail sender is not configured. OTP generated for {}", normalizedEmail);
         }
 
         return otp;

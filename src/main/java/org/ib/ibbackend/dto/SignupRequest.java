@@ -5,10 +5,13 @@ package org.ib.ibbackend.dto;
 public class SignupRequest {
     private String businessName;
     private String ownerName;
+    private String name;
+    private String username;
     private String email;
     private String phone;
-    private String passwordHash;  // Raw password from frontend; backend hashes securely
+    private String passwordHash;  // Raw password from frontend; backend hashes with Argon2id
     private String role;
+    private Long tenantId;
     private String gstin;
     private String pan;
     private String address;
@@ -23,6 +26,22 @@ public class SignupRequest {
 
     public void setOwnerName(String ownerName) {
         this.ownerName = ownerName;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
     }
 
     public String getPhone() {
@@ -47,6 +66,14 @@ public class SignupRequest {
 
     public void setRole(String role) {
         this.role = role;
+    }
+
+    public Long getTenantId() {
+        return tenantId;
+    }
+
+    public void setTenantId(Long tenantId) {
+        this.tenantId = tenantId;
     }
 
     public String getGstin() {
