@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "products", uniqueConstraints = {
-    @UniqueConstraint(name = "uk_products_tenant_sku", columnNames = {"tenant_id", "sku"})
+    @UniqueConstraint(name = "uk_products_tenant_sku_po_number", columnNames = {"tenant_id", "sku", "po_number"})
 })
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Product {
@@ -59,11 +59,18 @@ public class Product {
     @JoinColumn(name = "tenant_id")
     private Tenant tenant;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "uploaded_by")
+    private User uploadedBy;
+
     public Product() {
     }
 
     public Tenant getTenant() { return tenant; }
     public void setTenant(Tenant tenant) { this.tenant = tenant; }
+
+    public User getUploadedBy() { return uploadedBy; }
+    public void setUploadedBy(User uploadedBy) { this.uploadedBy = uploadedBy; }
 
 
 

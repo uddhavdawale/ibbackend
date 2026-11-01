@@ -4,6 +4,7 @@ import com.google.firebase.auth.FirebaseAuthException;
 import org.ib.ibbackend.dto.MfaOtpRequest;
 import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.repository.UserRepository;
+import org.ib.ibbackend.security.UserRolePolicy;
 import org.ib.ibbackend.service.AuditLogService;
 import org.ib.ibbackend.service.FirebaseTokenVerifierService;
 import org.ib.ibbackend.service.JwtService;
@@ -84,6 +85,11 @@ public class MfaController {
         }
 
         User user = userOpt.get();
+        if (user.isDisabled() || UserRolePolicy.isDisabledRole(user.getRole())) {
+            auditFailure("MFA_CHALLENGE", String.valueOf(user.getId()), "Disabled account requested OTP");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(Map.of("success", false, "message", "User account is disabled"));
+        }
         mailMfaService.issueOtp(user.getEmail());
         auditSuccess("MFA_CHALLENGE", String.valueOf(user.getId()), "Mail OTP sent");
 
@@ -105,6 +111,12 @@ public class MfaController {
         }
 
         User user = userOpt.get();
+        if (user.isDisabled() || UserRolePolicy.isDisabledRole(user.getRole())) {
+            refreshTokenService.revokeAllActiveTokensForUser(user);
+            auditFailure("MFA_VERIFY", String.valueOf(user.getId()), "Disabled account tried MFA verification");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(Map.of("success", false, "message", "User account is disabled"));
+        }
 
         String firebaseIdToken = request.getFirebaseIdToken();
         if (firebaseIdToken != null && !firebaseIdToken.isBlank() && isFirebaseMfaEnabled()) {

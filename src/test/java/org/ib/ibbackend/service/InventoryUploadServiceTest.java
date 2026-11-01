@@ -206,11 +206,20 @@ class InventoryUploadServiceTest {
 
         org.ib.ibbackend.entity.Product existing = new org.ib.ibbackend.entity.Product();
         existing.setId(100L);
+        existing.setName("Rice");
         existing.setSku("RICE-001");
+        existing.setHsnSac("RICE-001");
+        existing.setPrice(new BigDecimal("100.00"));
+        existing.setMrp(new BigDecimal("100.00"));
+        existing.setSetSize(1);
+        existing.setPoNumber("PO-1001");
+        existing.setCategory("Groceries");
+        existing.setQuantity(3);
+        existing.setTenant(tenant);
 
         when(userRepository.findByEmail("tenantuser@example.com")).thenReturn(java.util.Optional.of(user));
-        when(productRepository.findBySkuAndTenantId("RICE-001", 9L)).thenReturn(Optional.of(existing));
-        when(productRepository.findBySkuAndTenantId("RICE-001", 10L)).thenReturn(Optional.empty());
+        when(productRepository.findAllBySkuAndTenantId("RICE-001", 9L)).thenReturn(java.util.List.of(existing));
+        when(productRepository.findAllBySkuAndTenantId("RICE-001", 10L)).thenReturn(java.util.Collections.emptyList());
         when(productRepository.save(org.mockito.ArgumentMatchers.any(org.ib.ibbackend.entity.Product.class)))
             .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -253,6 +262,113 @@ class InventoryUploadServiceTest {
         assertTrue(otherTenantResult.isSuccess());
         assertEquals(1, otherTenantResult.getCreatedCount());
         assertEquals(0, otherTenantResult.getUpdatedCount());
+    }
+
+    @Test
+    void shouldCreateSeparateProductVariantWhenPoNumberDiffersForSameSku() {
+        ProductRepository productRepository = mock(ProductRepository.class);
+        UserRepository userRepository = mock(UserRepository.class);
+
+        Tenant tenant = new Tenant();
+        tenant.setId(9);
+
+        User user = new User();
+        user.setId(22L);
+        user.setEmail("tenantuser@example.com");
+        user.setTenant(tenant);
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("tenantuser@example.com", null)
+        );
+        TenantContext.setCurrentTenant(9L);
+
+        org.ib.ibbackend.entity.Product existing = new org.ib.ibbackend.entity.Product();
+        existing.setId(100L);
+        existing.setName("Rice");
+        existing.setSku("RICE-001");
+        existing.setHsnSac("RICE-001");
+        existing.setPoNumber("PO-1001");
+        existing.setPrice(new BigDecimal("100.00"));
+        existing.setMrp(new BigDecimal("130.00"));
+        existing.setSetSize(1);
+        existing.setCategory("Groceries");
+        existing.setQuantity(10);
+        existing.setTenant(tenant);
+
+        when(userRepository.findByEmail("tenantuser@example.com")).thenReturn(java.util.Optional.of(user));
+        when(productRepository.findAllBySkuAndTenantId("RICE-001", 9L)).thenReturn(java.util.List.of(existing));
+        when(productRepository.save(org.mockito.ArgumentMatchers.any(org.ib.ibbackend.entity.Product.class)))
+            .thenAnswer(invocation -> invocation.getArgument(0));
+
+        InventoryUploadService service = new InventoryUploadService(productRepository, userRepository);
+
+        var result = service.processUpload(
+            null,
+            null,
+            "[{\"product\":\"Rice\",\"sku\":\"RICE-001\",\"hsnSac\":\"RICE-001\",\"qty\":5,\"minStock\":2,\"set\":1,\"price\":120,\"pricePerQty\":120,\"mrp\":130,\"poNumber\":\"PO-1002\",\"category\":\"Groceries\"}]",
+            9L,
+            22L
+        );
+
+        assertTrue(result.isSuccess());
+        assertEquals(1, result.getCreatedCount());
+        assertEquals(0, result.getUpdatedCount());
+        assertEquals(10, existing.getQuantity());
+        assertEquals("PO-1001", existing.getPoNumber());
+    }
+
+    @Test
+    void shouldUpdateExistingQuantityWhenOnlyPoNumberDiffersForSameItem() {
+        ProductRepository productRepository = mock(ProductRepository.class);
+        UserRepository userRepository = mock(UserRepository.class);
+
+        Tenant tenant = new Tenant();
+        tenant.setId(9);
+
+        User user = new User();
+        user.setId(22L);
+        user.setEmail("tenantuser@example.com");
+        user.setTenant(tenant);
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("tenantuser@example.com", null)
+        );
+        TenantContext.setCurrentTenant(9L);
+
+        org.ib.ibbackend.entity.Product existing = new org.ib.ibbackend.entity.Product();
+        existing.setId(100L);
+        existing.setSku("RICE-001");
+        existing.setName("Rice");
+        existing.setHsnSac("RICE-001");
+        existing.setPrice(new BigDecimal("100.00"));
+        existing.setMrp(new BigDecimal("130.00"));
+        existing.setSetSize(1);
+        existing.setPoNumber("PO-1001");
+        existing.setCategory("Groceries");
+        existing.setQuantity(10);
+        existing.setTenant(tenant);
+
+        when(userRepository.findByEmail("tenantuser@example.com")).thenReturn(java.util.Optional.of(user));
+        when(productRepository.findAllBySkuAndTenantId("RICE-001", 9L)).thenReturn(java.util.List.of(existing));
+        when(productRepository.findBySkuAndPoNumberAndTenantId("RICE-001", "PO-1002", 9L)).thenReturn(Optional.empty());
+        when(productRepository.save(org.mockito.ArgumentMatchers.any(org.ib.ibbackend.entity.Product.class)))
+            .thenAnswer(invocation -> invocation.getArgument(0));
+
+        InventoryUploadService service = new InventoryUploadService(productRepository, userRepository);
+
+        var result = service.processUpload(
+            null,
+            null,
+            "[{\"product\":\"Rice\",\"sku\":\"RICE-001\",\"hsnSac\":\"RICE-001\",\"qty\":5,\"minStock\":2,\"set\":1,\"price\":100,\"pricePerQty\":100,\"mrp\":130,\"poNumber\":\"PO-1002\",\"category\":\"Groceries\"}]",
+            9L,
+            22L
+        );
+
+        assertTrue(result.isSuccess());
+        assertEquals(0, result.getCreatedCount());
+        assertEquals(1, result.getUpdatedCount());
+        assertEquals(15, existing.getQuantity());
+        assertEquals("PO-1002", existing.getPoNumber());
     }
 
     @Test

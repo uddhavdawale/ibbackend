@@ -115,36 +115,49 @@ public class InventoryUploadService {
         int updated = 0;
         int skipped = 0;
         List<Map<String, Object>> savedRecords = new ArrayList<>();
-        Set<String> seenSkus = new HashSet<>();
+        Set<String> seenProductKeys = new HashSet<>();
 
         for (InventoryUploadRow row : rows) {
             String sku = normalizeText(row.getSku());
-            if (!seenSkus.add(sku)) {
+            String poNumber = normalizeText(row.getPoNumber());
+            String productKey = buildProductIdentityKey(sku, poNumber);
+            if (!seenProductKeys.add(productKey)) {
                 skipped++;
                 continue;
             }
 
-            Product existingProduct = null;
-            if (resolvedTenantId != null) {
-                existingProduct = productRepository.findBySkuAndTenantId(sku, resolvedTenantId).orElse(null);
-            } else {
-                existingProduct = productRepository.findBySku(sku).orElse(null);
-            }
+            Product existingProduct = findExistingProductForUpload(row, resolvedTenantId);
+            boolean sameItemDifferentPo = isSameItemDifferentPo(existingProduct, row);
 
             int beforeQty = existingProduct != null && existingProduct.getQuantity() != null
                     ? existingProduct.getQuantity()
                     : 0;
 
             Product product = existingProduct != null ? existingProduct : new Product();
+            if (sameItemDifferentPo) {
+                product.setQuantity((product.getQuantity() == null ? 0 : product.getQuantity()) + row.getQty());
+                product.setMinStock(row.getMinStock());
+                product.setPrice(row.getPrice());
+                product.setMrp(row.getMrp());
+                product.setPoNumber(poNumber.isBlank() ? product.getPoNumber() : poNumber);
+                product.setUploadedBy(authenticatedUser);
+            } else {
+                product.setName(row.getProduct().trim());
+                product.setSku(sku);
+                product.setHsnSac(normalizeText(row.getHsnSac()));
+                product.setQuantity(row.getQty());
+                product.setMinStock(row.getMinStock());
+                product.setPrice(row.getPrice());
+                product.setMrp(row.getMrp());
+                product.setSetSize(row.getSet());
+                product.setPoNumber(poNumber);
+                product.setCategory(row.getCategory());
+                product.setUploadedBy(authenticatedUser);
+            }
             product.setName(row.getProduct().trim());
             product.setSku(sku);
             product.setHsnSac(normalizeText(row.getHsnSac()));
-            product.setQuantity(row.getQty());
-            product.setMinStock(row.getMinStock());
-            product.setPrice(row.getPrice());
-            product.setMrp(row.getMrp());
             product.setSetSize(row.getSet());
-            product.setPoNumber(normalizeText(row.getPoNumber()));
             product.setCategory(row.getCategory());
             if (resolvedTenantId != null) {
                 product.setTenant(toTenantReference(resolvedTenantId));
@@ -679,6 +692,72 @@ public class InventoryUploadService {
         }
 
         return "";
+    }
+
+    private Product findExistingProductForUpload(InventoryUploadRow row, Long tenantId) {
+        String sku = normalizeText(row.getSku());
+        if (sku.isBlank()) {
+            return null;
+        }
+
+        List<Product> candidates;
+        if (tenantId != null) {
+            candidates = productRepository.findAllBySkuAndTenantId(sku, tenantId);
+        } else {
+            candidates = productRepository.findAllBySku(sku);
+        }
+
+        if (candidates == null || candidates.isEmpty()) {
+            return null;
+        }
+
+        for (Product candidate : candidates) {
+            if (isSameProductDetails(candidate, row)) {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private boolean isSameItemDifferentPo(Product existingProduct, InventoryUploadRow row) {
+        if (existingProduct == null || row == null) {
+            return false;
+        }
+        if (existingProduct.getSku() == null || row.getSku() == null) {
+            return false;
+        }
+        if (!normalizeText(existingProduct.getSku()).equalsIgnoreCase(normalizeText(row.getSku()))) {
+            return false;
+        }
+        if (!isSameProductDetails(existingProduct, row)) {
+            return false;
+        }
+        String existingPo = normalizeText(existingProduct.getPoNumber());
+        String incomingPo = normalizeText(row.getPoNumber());
+        return !existingPo.equals(incomingPo);
+    }
+
+    private boolean isSameProductDetails(Product existingProduct, InventoryUploadRow row) {
+        if (existingProduct == null || row == null) {
+            return false;
+        }
+        BigDecimal existingPrice = existingProduct.getPrice();
+        BigDecimal incomingPrice = row.getPrice();
+        BigDecimal existingMrp = existingProduct.getMrp();
+        BigDecimal incomingMrp = row.getMrp();
+
+        return Objects.equals(normalizeText(existingProduct.getName()), normalizeText(row.getProduct()))
+                && Objects.equals(normalizeText(existingProduct.getSku()), normalizeText(row.getSku()))
+                && Objects.equals(normalizeText(existingProduct.getHsnSac()), normalizeText(row.getHsnSac()))
+                && (existingPrice == null ? incomingPrice == null : existingPrice.compareTo(incomingPrice == null ? BigDecimal.ZERO : incomingPrice) == 0)
+                && (existingMrp == null ? incomingMrp == null : existingMrp.compareTo(incomingMrp == null ? BigDecimal.ZERO : incomingMrp) == 0)
+                && Objects.equals(existingProduct.getSetSize(), row.getSet())
+                && Objects.equals(normalizeText(existingProduct.getCategory()), normalizeText(row.getCategory()));
+    }
+
+    private String buildProductIdentityKey(String sku, String poNumber) {
+        return normalizeText(sku) + "::" + normalizeText(poNumber);
     }
 
     private Object getMappedValue(Map<String, Object> raw, String... keys) {

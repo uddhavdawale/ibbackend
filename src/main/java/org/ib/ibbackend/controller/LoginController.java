@@ -7,6 +7,7 @@ import org.ib.ibbackend.entity.Tenant;
 import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.repository.TenantRepository;
 import org.ib.ibbackend.repository.UserRepository;
+import org.ib.ibbackend.security.UserRolePolicy;
 import org.ib.ibbackend.service.AuditLogService;
 import org.ib.ibbackend.service.FirebaseTokenVerifierService;
 import org.ib.ibbackend.service.JwtService;
@@ -76,6 +77,12 @@ public class LoginController {
         }
 
         User user = userOpt.get();
+        if (user.isDisabled() || UserRolePolicy.isDisabledRole(user.getRole())) {
+            refreshTokenService.revokeAllActiveTokensForUser(user);
+            auditFailure("LOGIN", String.valueOf(user.getId()), "Disabled account login attempt");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new LoginResponse(false, "Your account is disabled. Contact store admin."));
+        }
 
         if (!passwordSecurityService.matches(request.getPassword(), user.getPasswordHash())) {
             auditFailure("LOGIN", String.valueOf(user.getId()), "Invalid password");

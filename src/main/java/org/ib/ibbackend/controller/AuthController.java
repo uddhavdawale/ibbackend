@@ -6,6 +6,7 @@ import org.ib.ibbackend.entity.Tenant;
 import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.repository.TenantRepository;
 import org.ib.ibbackend.repository.UserRepository;
+import org.ib.ibbackend.security.UserRolePolicy;
 import org.ib.ibbackend.service.AuditLogService;
 import org.ib.ibbackend.service.JwtService;
 import org.ib.ibbackend.service.PasswordSecurityService;
@@ -74,6 +75,11 @@ public class AuthController {
         }
 
         User user = userOpt.get();
+        if (user.isDisabled() || UserRolePolicy.isDisabledRole(user.getRole())) {
+            refreshTokenService.revokeAllActiveTokensForUser(user);
+            auditFailure("LOGIN", String.valueOf(user.getId()), "Disabled account login attempt");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
 
         if (!passwordSecurityService.matches(req.getPassword(), user.getPasswordHash())) {
             auditFailure("LOGIN", String.valueOf(user.getId()), "Invalid password");
@@ -143,6 +149,12 @@ public class AuthController {
             User user = findUserByLoginIdentifier(requestedIdentifier)
                     .or(() -> findUserByLoginIdentifier(jwtService.extractRefreshClaims(refreshTokenToValidate).getSubject()))
                     .orElseThrow(() -> new RuntimeException("User not found"));
+
+            if (user.isDisabled() || UserRolePolicy.isDisabledRole(user.getRole())) {
+                refreshTokenService.revokeAllActiveTokensForUser(user);
+                auditFailure("TOKEN_REFRESH", String.valueOf(user.getId()), "Disabled account refresh attempt");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body("User account is disabled");
+            }
 
             if (!refreshTokenService.isValidForUser(user, refreshTokenToValidate)) {
                 auditFailure("TOKEN_REFRESH", String.valueOf(user.getId()), "Invalid refresh token for user");

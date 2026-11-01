@@ -85,17 +85,18 @@ public class ProductController {
                 product.getId(),
                 product.getName(),
                 product.getSku(),
-            product.getHsnSac(),
+                product.getHsnSac(),
                 product.getQuantity(),
                 product.getMinStock(),
                 product.getPrice(),
-            product.getMrp() != null ? product.getMrp() : product.getPrice(),
-            product.getSetSize() != null ? product.getSetSize() : 1,
-            product.getPoNumber(),
-            product.getSalesCount() != null ? product.getSalesCount() : 0,
+                product.getMrp() != null ? product.getMrp() : product.getPrice(),
+                product.getSetSize() != null ? product.getSetSize() : 1,
+                product.getPoNumber(),
+                product.getSalesCount() != null ? product.getSalesCount() : 0,
                 product.getCategory(),
                 product.getCreatedAt(),
-                tenantId
+                tenantId,
+                product.getUploadedBy() != null ? product.getUploadedBy().getId() : null
         );
     }
     @PostMapping
@@ -131,10 +132,11 @@ public class ProductController {
             entity.setHsnSac(resolvedCode);
         }
 
-        if (productRepository.existsBySkuAndTenantId(resolvedCode, tenantId)) {
+        String poNumber = entity.getPoNumber() == null ? "" : entity.getPoNumber().trim();
+        if (productRepository.existsBySkuAndPoNumberAndTenantId(resolvedCode, poNumber, tenantId)) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
                     "success", false,
-                    "message", "HSN/SAC already exists for this tenant"
+                    "message", "HSN/SAC already exists for this tenant and PO"
             ));
         }
 
@@ -200,7 +202,8 @@ public class ProductController {
             return ResponseEntity.badRequest().build();
         }
 
-        if (productRepository.existsBySkuAndTenantIdAndIdNot(resolvedCode, tenantId, id)) {
+        String poNumber = requestData.getPoNumber() == null ? "" : requestData.getPoNumber().trim();
+        if (productRepository.existsBySkuAndPoNumberAndTenantIdAndIdNot(resolvedCode, poNumber, tenantId, id)) {
             return ResponseEntity.status(HttpStatus.CONFLICT).build();
         }
 

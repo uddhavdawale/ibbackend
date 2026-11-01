@@ -23,9 +23,16 @@ public interface ProductRepository extends JpaRepository<Product,Long> {
 
     Optional<Product> findBySku(String sku);
     Optional<Product> findBySkuAndTenantId(String sku, Long tenantId);
+    List<Product> findAllBySkuAndTenantId(String sku, Long tenantId);
+    List<Product> findAllBySku(String sku);
+    Optional<Product> findBySkuAndPoNumber(String sku, String poNumber);
+    Optional<Product> findBySkuAndPoNumberAndTenantId(String sku, String poNumber, Long tenantId);
     boolean existsBySku(String sku);
     boolean existsBySkuAndTenantId(String sku, Long tenantId);
-        boolean existsBySkuAndTenantIdAndIdNot(String sku, Long tenantId, Long id);
+    boolean existsBySkuAndPoNumber(String sku, String poNumber);
+    boolean existsBySkuAndPoNumberAndTenantId(String sku, String poNumber, Long tenantId);
+    boolean existsBySkuAndTenantIdAndIdNot(String sku, Long tenantId, Long id);
+    boolean existsBySkuAndPoNumberAndTenantIdAndIdNot(String sku, String poNumber, Long tenantId, Long id);
 
     Page<Product> findByTenantId(Long tenantId, Pageable pageable);
     Optional<Product> findByIdAndTenantId(Long id, Long tenantId);

@@ -5,7 +5,6 @@ import jakarta.persistence.*;
 import lombok.Data;
 
 import java.time.LocalDateTime;
-import java.util.Set;
 
  enum Role {
     USER, STORE_ADMIN
@@ -50,6 +49,10 @@ public class User {
     private String pincode;
 
     private LocalDateTime createdAt = LocalDateTime.now();
+    private LocalDateTime deletedAt;
+    private Long deletedBy;
+    @Column(nullable = true)
+    private Boolean disabled = Boolean.FALSE;
     private boolean emailVerified = false;
 
 
@@ -100,6 +103,18 @@ public class User {
 
     public String getPincode() { return pincode; }
     public void setPincode(String pincode) { this.pincode = pincode; }
+
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
+    public LocalDateTime getDeletedAt() { return deletedAt; }
+    public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
+
+    public Long getDeletedBy() { return deletedBy; }
+    public void setDeletedBy(Long deletedBy) { this.deletedBy = deletedBy; }
+
+    public boolean isDisabled() { return Boolean.TRUE.equals(disabled); }
+    public void setDisabled(boolean disabled) { this.disabled = disabled; }
 
     public void setTenant(Tenant tenant) {
         this.tenant = tenant;

@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.repository.UserRepository;
+import org.ib.ibbackend.security.UserRolePolicy;
 import org.ib.ibbackend.service.AuditLogService;
 import org.ib.ibbackend.service.JwtService;
 import org.ib.ibbackend.service.RefreshTokenService;
@@ -68,6 +69,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                             .orElse(null);
                     if (user == null || !jwtService.isAccessTokenValid(token, user)) {
                         throw new SecurityException("Access token is invalid for user");
+                    }
+                    if (user.isDisabled() || UserRolePolicy.isDisabledRole(user.getRole())) {
+                        if (refreshTokenService != null) {
+                            refreshTokenService.revokeAllActiveTokensForUser(user);
+                        }
+                        throw new SecurityException("User account is disabled");
                     }
                     if (enforceActiveRefreshSession
                             && refreshTokenService != null
