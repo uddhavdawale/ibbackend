@@ -105,6 +105,42 @@ class AuthControllerTenantTest {
     }
 
     @Test
+    void signup_shouldAcceptBillingAndInventoryManagerRoles() {
+        when(passwordSecurityService.hashNewPassword(anyString())).thenReturn("hashedPassword");
+        when(userRepo.existsByUsername("billing_manager_user")).thenReturn(false);
+        when(userRepo.existsByEmail("billing.manager@example.com")).thenReturn(false);
+        when(userRepo.existsByUsername("inventory_manager_user")).thenReturn(false);
+        when(userRepo.existsByEmail("inventory.manager@example.com")).thenReturn(false);
+
+        SignupRequest billingRequest = new SignupRequest();
+        billingRequest.setBusinessName("Demo Billing");
+        billingRequest.setOwnerName("Billing Owner");
+        billingRequest.setUsername("billing_manager_user");
+        billingRequest.setEmail("billing.manager@example.com");
+        billingRequest.setPasswordHash("verySecurePassword123");
+        billingRequest.setRole("BILLING_MANAGER");
+
+        SignupRequest inventoryRequest = new SignupRequest();
+        inventoryRequest.setBusinessName("Demo Inventory");
+        inventoryRequest.setOwnerName("Inventory Owner");
+        inventoryRequest.setUsername("inventory_manager_user");
+        inventoryRequest.setEmail("inventory.manager@example.com");
+        inventoryRequest.setPasswordHash("verySecurePassword123");
+        inventoryRequest.setRole("INVENTORY_MANAGER");
+
+        ResponseEntity<ApiResponse> billingResponse = authController.signup(billingRequest);
+        ResponseEntity<ApiResponse> inventoryResponse = authController.signup(inventoryRequest);
+
+        assertEquals(200, billingResponse.getStatusCode().value());
+        assertEquals(200, inventoryResponse.getStatusCode().value());
+
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepo, times(2)).save(userCaptor.capture());
+        assertTrue(userCaptor.getAllValues().stream().map(User::getRole).toList().contains("billing_manager"));
+        assertTrue(userCaptor.getAllValues().stream().map(User::getRole).toList().contains("inventory_manager"));
+    }
+
+    @Test
     void signup_shouldRejectPasswordShorterThan12Characters() {
         SignupRequest request = new SignupRequest();
         request.setBusinessName("Demo Supermart");

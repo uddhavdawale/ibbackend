@@ -12,6 +12,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -63,7 +64,7 @@ class AuditControllerTest {
         log.setRequestPath("/api/auth/login");
         log.setHttpMethod("POST");
 
-        Page<AuditLog> page = new PageImpl<>(List.of(log));
+        Page<AuditLog> page = new PageImpl<>(List.of(log), PageRequest.of(0, 25), 26);
 
         when(userRepository.findByEmail("admin@example.com")).thenReturn(Optional.of(currentUser));
         when(auditLogRepository.findForAuditView(eq(7L), any(), any(), any(), any(), any())).thenReturn(page);
@@ -72,12 +73,17 @@ class AuditControllerTest {
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getRequestURI()).thenReturn("/api/audit/events");
 
-        var response = controller.getAuditEvents(0, 25, null, null, null, null, null, request);
+        var response = controller.getAuditEvents(0, 25, null, null, null, null, null, null, null, request);
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         assertThat(response.getBody()).containsEntry("scopeTenantId", 7L);
         assertThat(response.getBody()).containsEntry("role", "store_admin");
+        assertThat(response.getBody()).containsEntry("hasMore", true);
+        assertThat(response.getBody()).containsEntry("hasPrevious", false);
+        assertThat(response.getBody()).containsEntry("totalItems", 26L);
+        assertThat(response.getBody()).containsEntry("content", response.getBody().get("items"));
         assertThat((List<?>) response.getBody().get("items")).hasSize(1);
+        assertThat(((Map<?, ?>) response.getBody().get("pagination")).get("totalPages")).isEqualTo(2);
 
         verify(auditLogService).success(eq("AUDIT_REPORT_VIEW"), eq("/api/audit/events"), anyString());
     }
@@ -103,6 +109,70 @@ class AuditControllerTest {
         assertThrows(AccessDeniedException.class, () -> controller.getAuditSummary(30, null, request));
         verify(auditLogService).denied(eq("ACCESS_DENIED_EVENT"), eq("/api/audit/summary"), anyString());
     }
+
+        @Test
+        void getAuditEvents_shouldSupportPageNumberAndPageSizeAliases() {
+        AuditLogRepository auditLogRepository = mock(AuditLogRepository.class);
+        UserRepository userRepository = mock(UserRepository.class);
+        AuditLogService auditLogService = mock(AuditLogService.class);
+
+        AuditController controller = new AuditController(auditLogRepository, userRepository, auditLogService);
+
+        User currentUser = buildUser(10L, "admin@example.com", "retailer", 7);
+        SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken("admin@example.com", null)
+        );
+        TenantContext.setCurrentTenant(7L);
+
+        when(userRepository.findByEmail("admin@example.com")).thenReturn(Optional.of(currentUser));
+        when(auditLogRepository.findForAuditView(eq(7L), any(), any(), any(), any(), any()))
+            .thenReturn(new PageImpl<>(List.of(), PageRequest.of(2, 100), 0));
+
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getRequestURI()).thenReturn("/api/audit/events");
+
+        var response = controller.getAuditEvents(0, 50, 2, 100, null, null, null, null, null, request);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).containsEntry("page", 2);
+        assertThat(response.getBody()).containsEntry("size", 100);
+        }
+
+        @Test
+        void getAuditEvents_invalidDateRangeShouldReturnBadRequest() {
+        AuditLogRepository auditLogRepository = mock(AuditLogRepository.class);
+        UserRepository userRepository = mock(UserRepository.class);
+        AuditLogService auditLogService = mock(AuditLogService.class);
+
+        AuditController controller = new AuditController(auditLogRepository, userRepository, auditLogService);
+
+        User currentUser = buildUser(10L, "admin@example.com", "retailer", 7);
+        SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken("admin@example.com", null)
+        );
+        TenantContext.setCurrentTenant(7L);
+
+        when(userRepository.findByEmail("admin@example.com")).thenReturn(Optional.of(currentUser));
+
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getRequestURI()).thenReturn("/api/audit/events");
+
+        var response = controller.getAuditEvents(
+            0,
+            50,
+            null,
+            null,
+            "2026-12-01",
+            "2026-01-01",
+            null,
+            null,
+            null,
+            request
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody()).containsEntry("success", false);
+        }
 
     @Test
     void exportAuditEvents_auditRelatedRoleShouldBeDenied() {

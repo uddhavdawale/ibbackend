@@ -56,6 +56,7 @@ public class AuditController {
             "system_administrator",
             "store_admin"
     );
+        private static final int MAX_PAGE_INDEX = 10_000;
     private static final int DEFAULT_PAGE_SIZE = 50;
     private static final int MAX_PAGE_SIZE = 200;
     private static final int DEFAULT_SUMMARY_DAYS = 30;
@@ -79,6 +80,8 @@ public class AuditController {
     public ResponseEntity<Map<String, Object>> getAuditEvents(
             @RequestParam(name = "page", defaultValue = "0") int page,
             @RequestParam(name = "size", defaultValue = "50") int size,
+            @RequestParam(name = "pageNumber", required = false) Integer pageNumber,
+            @RequestParam(name = "pageSize", required = false) Integer pageSize,
             @RequestParam(name = "from", required = false) String from,
             @RequestParam(name = "to", required = false) String to,
             @RequestParam(name = "actionType", required = false) String actionType,
@@ -90,10 +93,14 @@ public class AuditController {
             AccessContext access = requireAuditAccess(request.getRequestURI(), false, tenantId);
             Instant fromTs = withDefault(parseInstantFilter(from, false), MIN_FILTER_INSTANT);
             Instant toTs = withDefault(parseInstantFilter(to, true), MAX_FILTER_INSTANT);
+            validateDateRange(fromTs, toTs);
             long scopedTenantId = normalizeTenantScope(access.effectiveTenantId);
 
-            int safePage = Math.max(page, 0);
-            int safeSize = clamp(size, 1, MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE);
+            int effectivePage = pageNumber != null ? pageNumber : page;
+            int effectiveSize = pageSize != null ? pageSize : size;
+
+            int safePage = clamp(effectivePage, 0, MAX_PAGE_INDEX, 0);
+            int safeSize = clamp(effectiveSize, 1, MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE);
 
             Page<AuditLog> rows = auditLogRepository.findForAuditView(
                 scopedTenantId,
@@ -119,6 +126,27 @@ public class AuditController {
             payload.put("scopeTenantId", access.effectiveTenantId);
             payload.put("role", access.normalizedRole);
             payload.put("hasMore", rows.hasNext());
+            payload.put("hasPrevious", rows.hasPrevious());
+
+            // Backward-compatible aliases for clients using Spring Page-style keys.
+            payload.put("content", items);
+            payload.put("number", rows.getNumber());
+            payload.put("numberOfElements", rows.getNumberOfElements());
+            payload.put("totalElements", rows.getTotalElements());
+            payload.put("first", rows.isFirst());
+            payload.put("last", rows.isLast());
+
+            Map<String, Object> pagination = new LinkedHashMap<>();
+            pagination.put("page", rows.getNumber());
+            pagination.put("size", rows.getSize());
+            pagination.put("numberOfElements", rows.getNumberOfElements());
+            pagination.put("totalItems", rows.getTotalElements());
+            pagination.put("totalPages", rows.getTotalPages());
+            pagination.put("hasMore", rows.hasNext());
+            pagination.put("hasPrevious", rows.hasPrevious());
+            pagination.put("first", rows.isFirst());
+            pagination.put("last", rows.isLast());
+            payload.put("pagination", pagination);
 
             auditLogService.success("AUDIT_REPORT_VIEW", request.getRequestURI(), "Audit events fetched");
             return secureNoStoreResponse(payload);
@@ -183,6 +211,7 @@ public class AuditController {
 
         Instant fromTs = withDefault(parseInstantFilter(from, false), MIN_FILTER_INSTANT);
         Instant toTs = withDefault(parseInstantFilter(to, true), MAX_FILTER_INSTANT);
+        validateDateRange(fromTs, toTs);
 
         int safeMaxRows = clamp(maxRows, 1, MAX_EXPORT_ROWS, DEFAULT_EXPORT_ROWS);
         Page<AuditLog> rows = auditLogRepository.findForAuditView(
@@ -411,7 +440,7 @@ public class AuditController {
 
         Set<Long> userIds = new HashSet<>();
         for (AuditLog row : rows) {
-            if (row.getUserId() != null) {
+            if (row.getUserId() != null && (row.getActorRole() == null || row.getActorRole().isBlank())) {
                 userIds.add(row.getUserId());
             }
         }
@@ -429,6 +458,12 @@ public class AuditController {
 
     private Collection<String> accessEventActions() {
         return Set.of("login", "logout", "token_refresh", "mfa_challenge", "access_denied_event");
+    }
+
+    private void validateDateRange(Instant from, Instant to) {
+        if (from != null && to != null && from.isAfter(to)) {
+            throw new IllegalArgumentException("Invalid date range. 'from' must be earlier than or equal to 'to'.");
+        }
     }
 
     private int clamp(int value, int min, int max, int fallback) {

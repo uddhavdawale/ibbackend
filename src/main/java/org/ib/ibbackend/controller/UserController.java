@@ -22,6 +22,12 @@ public class UserController {
         this.userRepository = userRepository;
     }
 
+    @GetMapping
+    public ResponseEntity<Map<String, Object>> getCurrentUserCompatibility() {
+        // Compatibility route for clients still calling /api/users.
+        return getCurrentUser();
+    }
+
     @GetMapping("/me")
     public ResponseEntity<Map<String, Object>> getCurrentUser() {
         String email = SecurityContextHolder.getContext().getAuthentication() == null

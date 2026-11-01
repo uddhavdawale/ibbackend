@@ -24,7 +24,7 @@ public class UserProvisioningService {
     ));
 
     private static final Set<String> CANONICAL_ROLES = new HashSet<>(List.of(
-            "store_admin", "store_manager", "store_billing_viewer", "store_inventory_viewer", "super_admin", "org_admin"
+            "store_admin", "store_manager", "store_billing_viewer", "store_inventory_viewer", "billing_manager", "inventory_manager", "super_admin", "org_admin"
     ));
 
     private final TenantRepository tenantRepository;
@@ -153,7 +153,7 @@ public class UserProvisioningService {
             case "retailer", "shop_owner", "owner", "admin" -> "store_admin";
             case "store_billing_viwer" -> "store_billing_viewer";
             case "store_inventory_viwer" -> "store_inventory_viewer";
-            case "store_admin", "store_manager", "store_billing_viewer", "store_inventory_viewer", "super_admin", "org_admin" -> normalized;
+            case "store_admin", "store_manager", "store_billing_viewer", "store_inventory_viewer", "billing_manager", "inventory_manager", "super_admin", "org_admin" -> normalized;
             default -> throw new IllegalArgumentException("Unsupported role: " + role);
         };
 
