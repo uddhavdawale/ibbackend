@@ -15,6 +15,16 @@ public class LoginRequest {
     @JsonProperty("password")
     private String password;  // Raw password from React
 
+    // Optional encrypted login envelope used by newer clients.
+    @JsonProperty("encryptedPayload")
+    private String encryptedPayload;
+
+    @JsonProperty("encryptedKey")
+    private String encryptedKey;
+
+    @JsonProperty("iv")
+    private String iv;
+
     public LoginRequest() {
     }
 
@@ -27,4 +37,13 @@ public class LoginRequest {
 
     public String getPassword() { return password; }
     public void setPassword(String password) { this.password = password; }
+
+    public String getEncryptedPayload() { return encryptedPayload; }
+    public void setEncryptedPayload(String encryptedPayload) { this.encryptedPayload = encryptedPayload; }
+
+    public String getEncryptedKey() { return encryptedKey; }
+    public void setEncryptedKey(String encryptedKey) { this.encryptedKey = encryptedKey; }
+
+    public String getIv() { return iv; }
+    public void setIv(String iv) { this.iv = iv; }
 }

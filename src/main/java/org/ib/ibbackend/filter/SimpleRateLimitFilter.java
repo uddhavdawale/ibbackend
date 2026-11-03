@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class SimpleRateLimitFilter extends OncePerRequestFilter {
     private static final long WINDOW_SECONDS = 60;
     private static final int MAX_REQUESTS_PER_WINDOW = 60;
-        private static final int MAX_EXPORT_REQUESTS_PER_WINDOW = 20;
+    private static final int MAX_EXPORT_REQUESTS_PER_WINDOW = 20;
     private static final Set<String> PROTECTED_PATHS = Set.of(
             "/api/login",
             "/login",
@@ -27,10 +27,11 @@ public class SimpleRateLimitFilter extends OncePerRequestFilter {
             "/api/mfa/send",
             "/api/mfa/verify"
     );
-        private static final Set<String> EXPORT_PATH_PREFIXES = Set.of(
+    private static final Set<String> EXPORT_PATH_PREFIXES = Set.of(
             "/api/dashboard",
-            "/api/gst"
-        );
+            "/api/gst",
+            "/api/audit/export"
+    );
 
     private final AuditLogService auditLogService;
     private final ConcurrentHashMap<String, Counter> counters = new ConcurrentHashMap<>();

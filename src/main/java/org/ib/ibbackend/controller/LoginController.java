@@ -11,10 +11,12 @@ import org.ib.ibbackend.security.UserRolePolicy;
 import org.ib.ibbackend.service.AuditLogService;
 import org.ib.ibbackend.service.FirebaseTokenVerifierService;
 import org.ib.ibbackend.service.JwtService;
+import org.ib.ibbackend.service.LoginCryptoService;
 import org.ib.ibbackend.service.MailMfaService;
 import org.ib.ibbackend.service.PasswordSecurityService;
 import org.ib.ibbackend.service.RefreshTokenService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
@@ -26,6 +28,8 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @RestController()
 @CrossOrigin(originPatterns = "*", allowCredentials = "true")
@@ -54,6 +58,14 @@ public class LoginController {
     @Autowired(required = false)
     private AuditLogService auditLogService;
 
+    @Autowired(required = false)
+    private LoginCryptoService loginCryptoService;
+
+    @Value("${app.security.login.encrypted-only:false}")
+    private boolean encryptedLoginOnly;
+
+    private static final Logger log = LoggerFactory.getLogger(LoginController.class);
+
     private void auditSuccess(String action, String resourceId, String detail) {
         if (auditLogService != null) {
             auditLogService.success(action, resourceId, detail);
@@ -68,7 +80,17 @@ public class LoginController {
 
     @PostMapping(path = {"/api/login", "/login"})
     public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) {
-        Optional<User> userOpt = findUserByLoginIdentifier(resolveLoginIdentifier(request.getUsername(), request.getEmail()));
+        LoginRequest normalizedRequest;
+        try {
+            normalizedRequest = normalizeLoginRequest(request);
+        } catch (LoginCryptoService.InvalidLoginCryptoPayloadException ex) {
+            log.warn("Login crypto validation/decryption failed on /api/login: {}", ex.getMessage());
+            auditFailure("LOGIN_CRYPTO", "N/A", "Encrypted login payload rejected");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new LoginResponse(false, "Invalid username or password"));
+        }
+
+        Optional<User> userOpt = findUserByLoginIdentifier(resolveLoginIdentifier(normalizedRequest.getUsername(), normalizedRequest.getEmail()));
 
         if (userOpt.isEmpty()) {
             auditFailure("LOGIN", "N/A", "Unknown username");
@@ -84,7 +106,7 @@ public class LoginController {
                     .body(new LoginResponse(false, "Your account is disabled. Contact store admin."));
         }
 
-        if (!passwordSecurityService.matches(request.getPassword(), user.getPasswordHash())) {
+        if (!passwordSecurityService.matches(normalizedRequest.getPassword(), user.getPasswordHash())) {
             auditFailure("LOGIN", String.valueOf(user.getId()), "Invalid password");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(new LoginResponse(false, "Invalid username or password"));
@@ -274,5 +296,25 @@ public class LoginController {
         loginModel.setUsername("admin@gmail.com");
         loginModel.setPassword("password");
         return loginModel;
+    }
+
+    private LoginRequest normalizeLoginRequest(LoginRequest request) {
+        if (loginCryptoService == null) {
+            if (encryptedLoginOnly) {
+                throw new LoginCryptoService.InvalidLoginCryptoPayloadException("Encrypted login payload is required");
+            }
+            return request;
+        }
+
+        boolean encrypted = loginCryptoService.isEncryptedPayload(request);
+        if (encryptedLoginOnly && !encrypted) {
+            throw new LoginCryptoService.InvalidLoginCryptoPayloadException("Encrypted login payload is required");
+        }
+
+        LoginRequest normalized = loginCryptoService.resolveLoginRequest(request);
+        if (encrypted) {
+            auditSuccess("LOGIN_CRYPTO", "N/A", "Encrypted login payload decrypted");
+        }
+        return normalized;
     }
 }

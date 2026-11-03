@@ -9,10 +9,12 @@ import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.security.UserRolePolicy;
 import org.ib.ibbackend.service.AuditLogService;
 import org.ib.ibbackend.service.JwtService;
+import org.ib.ibbackend.service.LoginCryptoService;
 import org.ib.ibbackend.service.PasswordSecurityService;
 import org.ib.ibbackend.service.RefreshTokenService;
 import org.ib.ibbackend.service.UserProvisioningService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
@@ -54,6 +56,12 @@ public class AuthController {
     @Autowired(required = false)
     private AuditLogService auditLogService;
 
+    @Autowired(required = false)
+    private LoginCryptoService loginCryptoService;
+
+    @Value("${app.security.login.encrypted-only:false}")
+    private boolean encryptedLoginOnly;
+
     private void auditSuccess(String action, String resourceId, String detail) {
         if (auditLogService != null) {
             auditLogService.success(action, resourceId, detail);
@@ -68,7 +76,15 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<Map<String, Object>> login(@RequestBody LoginRequest req) {
-        Optional<User> userOpt = findUserByLoginIdentifier(resolveLoginIdentifier(req.getUsername(), req.getEmail()));
+        LoginRequest normalizedRequest;
+        try {
+            normalizedRequest = normalizeLoginRequest(req);
+        } catch (LoginCryptoService.InvalidLoginCryptoPayloadException ex) {
+            auditFailure("LOGIN_CRYPTO", "N/A", "Encrypted login payload rejected");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        Optional<User> userOpt = findUserByLoginIdentifier(resolveLoginIdentifier(normalizedRequest.getUsername(), normalizedRequest.getEmail()));
         if (userOpt.isEmpty()) {
             auditFailure("LOGIN", "N/A", "Unknown username");
             return ResponseEntity.status(401).build();
@@ -81,7 +97,7 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
-        if (!passwordSecurityService.matches(req.getPassword(), user.getPasswordHash())) {
+        if (!passwordSecurityService.matches(normalizedRequest.getPassword(), user.getPasswordHash())) {
             auditFailure("LOGIN", String.valueOf(user.getId()), "Invalid password");
             return ResponseEntity.status(401).build();
         }
@@ -377,5 +393,25 @@ public class AuthController {
         tenant.setName(businessName);
         tenant.setCode(prefix + String.valueOf(suffix).substring(Math.max(0, String.valueOf(suffix).length() - 4)));
         return tenant;
+    }
+
+    private LoginRequest normalizeLoginRequest(LoginRequest request) {
+        if (loginCryptoService == null) {
+            if (encryptedLoginOnly) {
+                throw new LoginCryptoService.InvalidLoginCryptoPayloadException("Encrypted login payload is required");
+            }
+            return request;
+        }
+
+        boolean encrypted = loginCryptoService.isEncryptedPayload(request);
+        if (encryptedLoginOnly && !encrypted) {
+            throw new LoginCryptoService.InvalidLoginCryptoPayloadException("Encrypted login payload is required");
+        }
+
+        LoginRequest normalized = loginCryptoService.resolveLoginRequest(request);
+        if (encrypted) {
+            auditSuccess("LOGIN_CRYPTO", "N/A", "Encrypted login payload decrypted");
+        }
+        return normalized;
     }
 }

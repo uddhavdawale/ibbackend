@@ -13,6 +13,7 @@ import org.ib.ibbackend.repository.InvoiceRepository;
 import org.ib.ibbackend.repository.ProductRepository;
 import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.service.JwtService;
+import org.ib.ibbackend.service.LoginCryptoService;
 import org.ib.ibbackend.service.PasswordSecurityService;
 import org.ib.ibbackend.service.RefreshTokenService;
 import org.ib.ibbackend.service.SequenceService;
@@ -205,5 +206,59 @@ class FrontendContractContractTest {
         ResponseEntity<?> response = controller.refreshToken(request, null, null);
 
         assertThat(response.getStatusCode().value()).isEqualTo(401);
+    }
+
+    @Test
+    void encryptedLoginShouldKeepFrontendContractPayload() {
+        AuthController controller = new AuthController();
+        UserRepository userRepo = mock(UserRepository.class);
+        Argon2PasswordEncoder argon2 = Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
+        JwtService jwtService = mock(JwtService.class);
+        RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
+        LoginCryptoService loginCryptoService = mock(LoginCryptoService.class);
+
+        ReflectionTestUtils.setField(controller, "userRepo", userRepo);
+        ReflectionTestUtils.setField(controller, "passwordSecurityService", new PasswordSecurityService(argon2));
+        ReflectionTestUtils.setField(controller, "jwtService", jwtService);
+        ReflectionTestUtils.setField(controller, "refreshTokenService", refreshTokenService);
+        ReflectionTestUtils.setField(controller, "loginCryptoService", loginCryptoService);
+
+        Tenant tenant = new Tenant();
+        tenant.setId(9);
+        tenant.setName("Retail Tenant");
+        tenant.setCode("RET9");
+
+        User user = new User();
+        user.setId(99L);
+        user.setOwnerName("Retail Owner");
+        user.setEmail("retail@example.com");
+        user.setBusinessName("Retail Tenant");
+        user.setPasswordHash(argon2.encode("secret"));
+        user.setRole("STORE_ADMIN");
+        user.setTenant(tenant);
+
+        when(userRepo.findByEmail("retail@example.com")).thenReturn(Optional.of(user));
+        when(jwtService.generateAccessToken(user)).thenReturn("access-token");
+        when(jwtService.generateRefreshToken(user)).thenReturn("refresh-token");
+
+        LoginRequest encryptedRequest = new LoginRequest();
+        encryptedRequest.setEncryptedPayload("payload");
+        encryptedRequest.setEncryptedKey("key");
+        encryptedRequest.setIv("iv");
+
+        LoginRequest decryptedRequest = new LoginRequest();
+        decryptedRequest.setUsername("retail@example.com");
+        decryptedRequest.setPassword("secret");
+
+        when(loginCryptoService.isEncryptedPayload(encryptedRequest)).thenReturn(true);
+        when(loginCryptoService.resolveLoginRequest(encryptedRequest)).thenReturn(decryptedRequest);
+
+        ResponseEntity<Map<String, Object>> response = controller.login(encryptedRequest);
+        Map<String, Object> userPayload = (Map<String, Object>) response.getBody().get("user");
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(userPayload).containsEntry("tenantId", 9);
+        assertThat(userPayload).containsEntry("businessName", "Retail Tenant");
+        assertThat(userPayload).containsEntry("email", "retail@example.com");
     }
 }
