@@ -16,6 +16,8 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
 
     Optional<CustomerProfile> findByTenantIdAndEmail(Long tenantId, String email);
 
+    Optional<CustomerProfile> findByTenantIdAndCustomerName(Long tenantId, String customerName);
+
     List<CustomerProfile> findByTenantIdOrderByUpdatedAtDesc(Long tenantId);
 
     @Query("SELECT c FROM CustomerProfile c WHERE c.tenantId = :tenantId AND " +

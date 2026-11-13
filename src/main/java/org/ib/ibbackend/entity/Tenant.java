@@ -1,6 +1,7 @@
 package org.ib.ibbackend.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -12,6 +13,7 @@ import jakarta.persistence.UniqueConstraint;
 @Table(name = "tenants", uniqueConstraints = {
         @UniqueConstraint(name = "uk_tenants_code", columnNames = "code")
 })
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Tenant {
     @Id
     @GeneratedValue
@@ -19,6 +21,15 @@ public class Tenant {
     private String name; // "Shreeram Stores"
     @Column(nullable = false, unique = true, length = 32)
     private String code; // "SHR"
+
+    @Column(length = 500)
+    private String address;
+
+    @Column(length = 100)
+    private String city;
+
+    @Column(length = 20)
+    private String pincode;
 
     public String getCode() {
         return code;
@@ -47,5 +58,29 @@ public class Tenant {
 
     public void setCode(String code) {
         this.code = code;
+    }
+
+    public String getAddress() {
+        return address;
+    }
+
+    public void setAddress(String address) {
+        this.address = address;
+    }
+
+    public String getCity() {
+        return city;
+    }
+
+    public void setCity(String city) {
+        this.city = city;
+    }
+
+    public String getPincode() {
+        return pincode;
+    }
+
+    public void setPincode(String pincode) {
+        this.pincode = pincode;
     }
 }

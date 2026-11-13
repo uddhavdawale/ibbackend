@@ -51,10 +51,45 @@ public class CustomerProfileController {
         return ResponseEntity.ok(customerProfileService.searchByTenant(tenantId, query));
     }
 
+    @GetMapping("/phone/{phone}")
+    public ResponseEntity<CustomerProfile> getCustomerByPhone(@PathVariable String phone) {
+        Long tenantId = TenantContext.getCurrentTenant();
+        if (tenantId == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+        return customerProfileService.findByPhone(tenantId, phone)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<CustomerProfile> getCustomer(@PathVariable Long id) {
         return customerProfileService.findById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<CustomerProfile> updateCustomer(@PathVariable Long id, @RequestBody CustomerProfileRequest request) {
+        Long tenantId = TenantContext.getCurrentTenant();
+        if (tenantId == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+        if (request != null) {
+            request.setTenantId(tenantId);
+        }
+        return ResponseEntity.ok(customerProfileService.updateCustomerProfile(id, request));
+    }
+
+    @PatchMapping("/{id}")
+    public ResponseEntity<CustomerProfile> patchCustomer(@PathVariable Long id, @RequestBody CustomerProfileRequest request) {
+        Long tenantId = TenantContext.getCurrentTenant();
+        if (tenantId == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+        if (request != null) {
+            request.setTenantId(tenantId);
+        }
+        return ResponseEntity.ok(customerProfileService.updateCustomerProfile(id, request));
     }
 }

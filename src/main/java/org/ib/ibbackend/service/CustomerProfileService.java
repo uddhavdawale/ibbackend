@@ -1,6 +1,7 @@
 package org.ib.ibbackend.service;
 
 import org.ib.ibbackend.dto.CustomerProfileRequest;
+import org.ib.ibbackend.dto.CustomerInvoiceRecord;
 import org.ib.ibbackend.entity.CustomerProfile;
 import org.ib.ibbackend.entity.Invoice;
 import org.ib.ibbackend.entity.NonGstInvoice;
@@ -15,8 +16,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 
@@ -48,15 +51,16 @@ public class CustomerProfileService {
 
         String phone = normalizePhone(request.getPhone());
         String email = normalizeEmail(request.getEmail());
-        if ((phone == null || phone.isBlank()) && (email == null || email.isBlank())) {
-            throw new IllegalArgumentException("Phone or email is required");
+        String customerName = normalizeCustomerName(request.getCustomerName());
+        if ((phone == null || phone.isBlank()) && (email == null || email.isBlank()) && (customerName == null || customerName.isBlank())) {
+            throw new IllegalArgumentException("Phone, email, or customer name is required");
         }
 
-        CustomerProfile customer = findCustomerByTenantAndContact(tenantId, phone, email)
+        CustomerProfile customer = findCustomerByTenantAndContact(tenantId, phone, email, customerName)
                 .orElseGet(CustomerProfile::new);
 
         customer.setTenantId(tenantId);
-        customer.setCustomerName(request.getCustomerName() == null || request.getCustomerName().isBlank() ? customer.getCustomerName() : request.getCustomerName());
+        customer.setCustomerName(customerName == null || customerName.isBlank() ? customer.getCustomerName() : customerName);
         customer.setShopName(request.getShopName() == null || request.getShopName().isBlank() ? customer.getShopName() : request.getShopName());
         customer.setAddress(request.getAddress() == null || request.getAddress().isBlank() ? customer.getAddress() : request.getAddress());
         customer.setGstNumber(request.getGstNumber() == null || request.getGstNumber().isBlank() ? customer.getGstNumber() : request.getGstNumber());
@@ -84,70 +88,15 @@ public class CustomerProfileService {
         request.setEmail(invoice.getCustomerEmail());
 
         CustomerProfile customer = createOrUpdateCustomer(request);
-        List<InvoiceSummary> matchingInvoices = new ArrayList<>();
+        BigDecimal previousBalance = customer.getDueBalance() == null ? BigDecimal.ZERO : customer.getDueBalance();
+        BigDecimal currentInvoiceDue = computeInvoiceDue(invoice.getGrandTotal(), invoice.getPaidAmount());
+        BigDecimal totalDue = previousBalance.add(currentInvoiceDue).max(BigDecimal.ZERO);
 
-        // Always include the current invoice snapshot to avoid relying only on follow-up queries.
-        addInvoiceIfAbsent(matchingInvoices, new InvoiceSummary(
-            invoice.getId(),
-            invoice.getInvoiceNo(),
-            invoice.getGrandTotal(),
-            invoice.getPaidAmount(),
-            invoice.getDate()));
-
-        if (customer.getPhone() != null && !customer.getPhone().isBlank()) {
-            invoiceRepository.findByTenantIdAndCustomerPhone(tenantId, customer.getPhone())
-                .forEach(invoiceItem -> addInvoiceIfAbsent(matchingInvoices, new InvoiceSummary(
-                            invoiceItem.getId(),
-                            invoiceItem.getInvoiceNo(),
-                            invoiceItem.getGrandTotal(),
-                            invoiceItem.getPaidAmount(),
-                    invoiceItem.getDate())));
-        }
-        if (customer.getEmail() != null && !customer.getEmail().isBlank()) {
-            invoiceRepository.findByTenantIdAndCustomerEmail(tenantId, customer.getEmail())
-                .forEach(invoiceItem -> addInvoiceIfAbsent(matchingInvoices, new InvoiceSummary(
-                            invoiceItem.getId(),
-                            invoiceItem.getInvoiceNo(),
-                            invoiceItem.getGrandTotal(),
-                            invoiceItem.getPaidAmount(),
-                    invoiceItem.getDate())));
-        }
-
-        if (nonGstInvoiceRepository != null && customer.getPhone() != null && !customer.getPhone().isBlank()) {
-            nonGstInvoiceRepository.findByTenantIdAndCustomerPhone(tenantId, customer.getPhone())
-                .forEach(invoiceItem -> addInvoiceIfAbsent(matchingInvoices, new InvoiceSummary(
-                                invoiceItem.getId(),
-                                invoiceItem.getInvoiceNo(),
-                                invoiceItem.getGrandTotal(),
-                                invoiceItem.getPaidAmount(),
-                    invoiceItem.getDate())));
-        }
-
-        BigDecimal dueBalance = BigDecimal.ZERO;
-        int count = 0;
-        Long lastOrderId = null;
-        String lastOrderNo = null;
-        LocalDate lastInvoiceDate = null;
-        for (InvoiceSummary current : matchingInvoices) {
-            if (current == null) {
-                continue;
-            }
-            BigDecimal grandTotal = current.grandTotal() == null ? BigDecimal.ZERO : current.grandTotal();
-            BigDecimal paidAmount = current.paidAmount() == null ? BigDecimal.ZERO : current.paidAmount();
-            dueBalance = dueBalance.add(grandTotal.subtract(paidAmount).max(BigDecimal.ZERO));
-            count++;
-            if (current.date() != null && (lastInvoiceDate == null || current.date().isAfter(lastInvoiceDate))) {
-                lastInvoiceDate = current.date();
-                lastOrderId = current.id();
-                lastOrderNo = current.invoiceNo();
-            }
-        }
-
-        customer.setDueBalance(dueBalance);
-        customer.setPreviousOrderCount(count);
-        customer.setLastOrderId(lastOrderId);
-        customer.setLastOrderNo(lastOrderNo);
-        customer.setLastInvoiceDate(lastInvoiceDate);
+        customer.applyOutstandingAmount(totalDue);
+        customer.setPreviousOrderCount(customer.getPreviousOrderCount() + 1);
+        customer.setLastOrderId(invoice.getId());
+        customer.setLastOrderNo(invoice.getInvoiceNo());
+        customer.setLastInvoiceDate(invoice.getDate());
         return customerProfileRepository.save(customer);
     }
 
@@ -168,9 +117,11 @@ public class CustomerProfileService {
         request.setPhone(invoice.getCustomerPhone());
 
         CustomerProfile customer = createOrUpdateCustomer(request);
-        BigDecimal dueBalance = invoice.getGrandTotal() == null ? BigDecimal.ZERO : invoice.getGrandTotal();
-        BigDecimal paid = invoice.getPaidAmount() == null ? BigDecimal.ZERO : invoice.getPaidAmount();
-        customer.setDueBalance(customer.getDueBalance().add(dueBalance.subtract(paid).max(BigDecimal.ZERO)));
+        BigDecimal previousBalance = customer.getDueBalance() == null ? BigDecimal.ZERO : customer.getDueBalance();
+        BigDecimal currentInvoiceDue = computeInvoiceDue(invoice.getGrandTotal(), invoice.getPaidAmount());
+        BigDecimal totalDue = previousBalance.add(currentInvoiceDue).max(BigDecimal.ZERO);
+
+        customer.applyOutstandingAmount(totalDue);
         customer.setPreviousOrderCount(customer.getPreviousOrderCount() + 1);
         customer.setLastOrderId(invoice.getId());
         customer.setLastOrderNo(invoice.getInvoiceNo());
@@ -185,7 +136,91 @@ public class CustomerProfileService {
         if (tenantId == null) {
             throw new AccessDeniedException("Access denied");
         }
-        return customerProfileRepository.findByTenantIdOrderByUpdatedAtDesc(tenantId);
+
+        List<CustomerProfile> customers = new ArrayList<>(customerProfileRepository.findByTenantIdOrderByUpdatedAtDesc(tenantId));
+        for (CustomerInvoiceRecord invoice : invoiceRepository.findCustomerRecordsByTenantId(tenantId)) {
+            addInvoiceCustomer(customers, tenantId, invoice);
+        }
+        for (CustomerInvoiceRecord invoice : nonGstInvoiceRepository.findCustomerRecordsByTenantId(tenantId)) {
+            addInvoiceCustomer(customers, tenantId, invoice);
+        }
+        customers.sort(Comparator.comparing(
+                CustomerProfile::getUpdatedAt,
+                Comparator.nullsLast(Comparator.reverseOrder())
+        ));
+        return customers;
+    }
+
+    private void addInvoiceCustomer(List<CustomerProfile> customers, Long tenantId, CustomerInvoiceRecord invoice) {
+        String phone = normalizePhone(invoice.customerPhone());
+        String email = normalizeEmail(invoice.customerEmail());
+        String name = normalizeCustomerName(invoice.customerName());
+        if ((phone == null || phone.isBlank()) && (email == null || email.isBlank()) && (name == null || name.isBlank())) {
+            return;
+        }
+
+        CustomerProfile customer = findCustomerInList(customers, tenantId, phone, email, name);
+        if (customer == null) {
+            customer = new CustomerProfile();
+            customer.setTenantId(tenantId);
+            customer.setCustomerName(name);
+            customer.setPhone(phone);
+            customer.setEmail(email);
+            customers.add(customer);
+        }
+
+        if (customer.getId() != null) {
+            return;
+        }
+
+        BigDecimal currentDue = customer.getDueBalance();
+        customer.applyOutstandingAmount(currentDue.add(computeInvoiceDue(invoice.grandTotal(), invoice.paidAmount())));
+        customer.setPreviousOrderCount(customer.getPreviousOrderCount() + 1);
+        if (invoice.date() != null
+                && (customer.getLastInvoiceDate() == null || !invoice.date().isBefore(customer.getLastInvoiceDate()))) {
+            customer.setLastOrderId(invoice.id());
+            customer.setLastOrderNo(invoice.invoiceNo());
+            customer.setLastInvoiceDate(invoice.date());
+            customer.setUpdatedAt(invoice.date().atStartOfDay());
+        }
+        if (invoice.date() != null
+                && (customer.getCreatedAt() == null || invoice.date().isBefore(customer.getCreatedAt().toLocalDate()))) {
+            customer.setCreatedAt(invoice.date().atStartOfDay());
+        }
+    }
+
+    private CustomerProfile findCustomerInList(
+            List<CustomerProfile> customers,
+            Long tenantId,
+            String phone,
+            String email,
+            String name
+    ) {
+        for (CustomerProfile customer : customers) {
+            if (customer.getTenantId() == null || !customer.getTenantId().equals(tenantId)) {
+                continue;
+            }
+            if (phone != null && phone.equals(normalizePhone(customer.getPhone()))) {
+                return customer;
+            }
+        }
+        for (CustomerProfile customer : customers) {
+            if (customer.getTenantId() == null || !customer.getTenantId().equals(tenantId)) {
+                continue;
+            }
+            if (email != null && email.equals(normalizeEmail(customer.getEmail()))) {
+                return customer;
+            }
+        }
+        for (CustomerProfile customer : customers) {
+            if (customer.getTenantId() == null || !customer.getTenantId().equals(tenantId)) {
+                continue;
+            }
+            if (name != null && name.equals(normalizeCustomerName(customer.getCustomerName()))) {
+                return customer;
+            }
+        }
+        return null;
     }
 
     public Optional<CustomerProfile> findById(Long id) {
@@ -197,6 +232,53 @@ public class CustomerProfileService {
                 .filter(customer -> customer.getTenantId() != null && customer.getTenantId().equals(tenantId));
     }
 
+    public Optional<CustomerProfile> findByPhone(Long tenantId, String phone) {
+        if (tenantId == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+        String normalizedPhone = normalizePhone(phone);
+        if (normalizedPhone == null || normalizedPhone.isBlank()) {
+            return Optional.empty();
+        }
+        return customerProfileRepository.findByTenantIdAndPhone(tenantId, normalizedPhone);
+    }
+
+    @Transactional
+    public CustomerProfile updateCustomerProfile(Long id, CustomerProfileRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("Customer request is required");
+        }
+
+        Long tenantId = TenantContext.getCurrentTenant();
+        if (tenantId == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+
+        CustomerProfile customer = customerProfileRepository.findById(id)
+                .filter(existing -> existing.getTenantId() != null && existing.getTenantId().equals(tenantId))
+                .orElseThrow(() -> new IllegalArgumentException("Customer profile not found for this tenant"));
+
+        if (request.getCustomerName() != null && !request.getCustomerName().isBlank()) {
+            customer.setCustomerName(request.getCustomerName());
+        }
+        if (request.getShopName() != null) {
+            customer.setShopName(request.getShopName());
+        }
+        if (request.getAddress() != null) {
+            customer.setAddress(request.getAddress());
+        }
+        if (request.getGstNumber() != null) {
+            customer.setGstNumber(request.getGstNumber());
+        }
+        if (request.getPhone() != null && !request.getPhone().isBlank()) {
+            customer.setPhone(normalizePhone(request.getPhone()));
+        }
+        if (request.getEmail() != null && !request.getEmail().isBlank()) {
+            customer.setEmail(normalizeEmail(request.getEmail()));
+        }
+        return customerProfileRepository.save(customer);
+    }
+
     public List<CustomerProfile> searchByTenant(Long tenantId, String search) {
         if (tenantId == null) {
             tenantId = TenantContext.getCurrentTenant();
@@ -204,11 +286,23 @@ public class CustomerProfileService {
         if (tenantId == null) {
             throw new AccessDeniedException("Access denied");
         }
+
+        List<CustomerProfile> customers = listByTenant(tenantId);
         String safeSearch = search == null ? "" : search.trim();
         if (safeSearch.isBlank()) {
-            return customerProfileRepository.findByTenantIdOrderByUpdatedAtDesc(tenantId);
+            return customers;
         }
-        return customerProfileRepository.searchByTenantAndKeyword(tenantId, safeSearch);
+        String normalizedSearch = safeSearch.toLowerCase(Locale.ROOT);
+        return customers.stream()
+                .filter(customer -> containsIgnoreCase(customer.getCustomerName(), normalizedSearch)
+                        || containsIgnoreCase(customer.getPhone(), normalizedSearch)
+                        || containsIgnoreCase(customer.getEmail(), normalizedSearch)
+                        || containsIgnoreCase(customer.getShopName(), normalizedSearch))
+                .toList();
+    }
+
+    private boolean containsIgnoreCase(String value, String normalizedSearch) {
+        return value != null && value.toLowerCase(Locale.ROOT).contains(normalizedSearch);
     }
 
     private record InvoiceSummary(Long id, String invoiceNo, BigDecimal grandTotal, BigDecimal paidAmount, LocalDate date) {
@@ -238,7 +332,7 @@ public class CustomerProfileService {
         }
     }
 
-    private Optional<CustomerProfile> findCustomerByTenantAndContact(Long tenantId, String phone, String email) {
+    private Optional<CustomerProfile> findCustomerByTenantAndContact(Long tenantId, String phone, String email, String customerName) {
         if (phone != null && !phone.isBlank()) {
             Optional<CustomerProfile> byPhone = customerProfileRepository.findByTenantIdAndPhone(tenantId, phone);
             if (byPhone.isPresent()) {
@@ -246,9 +340,21 @@ public class CustomerProfileService {
             }
         }
         if (email != null && !email.isBlank()) {
-            return customerProfileRepository.findByTenantIdAndEmail(tenantId, email);
+            Optional<CustomerProfile> byEmail = customerProfileRepository.findByTenantIdAndEmail(tenantId, email);
+            if (byEmail.isPresent()) {
+                return byEmail;
+            }
+        }
+        if (customerName != null && !customerName.isBlank()) {
+            return customerProfileRepository.findByTenantIdAndCustomerName(tenantId, customerName);
         }
         return Optional.empty();
+    }
+
+    private BigDecimal computeInvoiceDue(BigDecimal grandTotal, BigDecimal receivedAmount) {
+        BigDecimal total = grandTotal == null ? BigDecimal.ZERO : grandTotal;
+        BigDecimal received = receivedAmount == null ? BigDecimal.ZERO : receivedAmount.max(BigDecimal.ZERO);
+        return total.subtract(received).max(BigDecimal.ZERO);
     }
 
     private String normalizePhone(String phone) {
@@ -256,6 +362,14 @@ public class CustomerProfileService {
             return null;
         }
         String normalized = phone.trim();
+        return normalized.isBlank() ? null : normalized;
+    }
+
+    private String normalizeCustomerName(String customerName) {
+        if (customerName == null) {
+            return null;
+        }
+        String normalized = customerName.trim();
         return normalized.isBlank() ? null : normalized;
     }
 
