@@ -16,10 +16,12 @@ import org.ib.ibbackend.service.JwtService;
 import org.ib.ibbackend.service.LoginCryptoService;
 import org.ib.ibbackend.service.PasswordSecurityService;
 import org.ib.ibbackend.service.RefreshTokenService;
-import org.ib.ibbackend.service.SequenceService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -33,6 +35,12 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class FrontendContractContractTest {
+
+    @AfterEach
+    void clearRequestContexts() {
+        TenantContext.clear();
+        SecurityContextHolder.clearContext();
+    }
 
     @Test
     void dashboardMetricsShouldUseFrontendContractKeys() {
@@ -101,11 +109,12 @@ class FrontendContractContractTest {
     @Test
     void createInvoiceShouldIgnoreClientStatusAndUseServerCalculatedPaymentState() {
         TenantContext.setCurrentTenant(7L);
+        SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken("owner@example.com", null, List.of()));
 
         InvoiceController controller = new InvoiceController();
         ReflectionTestUtils.setField(controller, "productRepository", mock(ProductRepository.class));
         ReflectionTestUtils.setField(controller, "invoiceRepository", mock(InvoiceRepository.class));
-        ReflectionTestUtils.setField(controller, "seqService", mock(SequenceService.class));
         ReflectionTestUtils.setField(controller, "userRepository", mock(UserRepository.class));
 
         Product product = new Product();
@@ -117,8 +126,6 @@ class FrontendContractContractTest {
 
         when(((ProductRepository) ReflectionTestUtils.getField(controller, "productRepository")).findById(10L))
                 .thenReturn(Optional.of(product));
-        when(((SequenceService) ReflectionTestUtils.getField(controller, "seqService")).nextValue("invoice"))
-                .thenReturn(1);
         when(((InvoiceRepository) ReflectionTestUtils.getField(controller, "invoiceRepository")).save(any(Invoice.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -146,6 +153,7 @@ class FrontendContractContractTest {
         assertThat(saved.getPaidAmount()).isEqualByComparingTo("105.00");
         assertThat(saved.getPaymentStatus()).isEqualTo(Invoice.PaymentStatus.PAID);
         assertThat(saved.getStatus()).isEqualTo(Invoice.InvoiceStatus.PAID);
+        assertThat(saved.getInvoiceNo()).matches("INV-\\d{12}-\\d{4}");
     }
 
     @Test

@@ -15,16 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -39,6 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @RestController
+@CrossOrigin(originPatterns  = "*")
 @RequestMapping("/api/users")
 public class UserController {
     private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-z0-9._-]{3,50}$");
@@ -108,23 +100,28 @@ public class UserController {
             @RequestParam(name = "search", required = false) String search,
             @RequestParam(name = "includeDisabled", defaultValue = "false") boolean includeDisabled) {
         User currentUser = requireAdminUser();
-        if (currentUser.getTenant() == null) {
-            throw new AccessDeniedException("Current user has no tenant");
-        }
 
         int safePage = Math.max(0, page);
         int safeSize = Math.max(1, Math.min(MAX_PAGE_SIZE, size <= 0 ? DEFAULT_PAGE_SIZE : size));
         PageRequest pageRequest = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "id"));
 
         String normalizedSearch = search == null ? null : search.trim();
-        int tenantId = currentUser.getTenant().getId();
+        Page<User> userPage;
+        Integer tenantId = currentUser.getTenant() != null ? currentUser.getTenant().getId() : null;
 
-        Page<User> userPage = userRepository.findTenantUsersForManagement(
-                tenantId,
-                normalizedSearch,
-                includeDisabled,
-                pageRequest
-        );
+        if (UserRolePolicy.isSystemAdmin(currentUser.getRole())) {
+            userPage = userRepository.findAllUsersForManagement(normalizedSearch, includeDisabled, pageRequest);
+        } else {
+            if (tenantId == null) {
+                throw new AccessDeniedException("Current user has no tenant");
+            }
+            userPage = userRepository.findTenantUsersForManagement(
+
+                    normalizedSearch,
+                    includeDisabled,
+                    pageRequest
+            );
+        }
 
         List<Map<String, Object>> items = userPage.getContent()
                 .stream()
@@ -140,6 +137,7 @@ public class UserController {
         response.put("totalPages", userPage.getTotalPages());
         response.put("hasMore", userPage.hasNext());
         response.put("tenantId", tenantId);
+        response.put("platformWide", UserRolePolicy.isSystemAdmin(currentUser.getRole()));
         return ResponseEntity.ok(response);
     }
 
@@ -284,15 +282,19 @@ public class UserController {
     private User requireAdminUser() {
         User currentUser = resolveCurrentUser();
         if (!UserRolePolicy.canManageUsers(currentUser.getRole())) {
-            throw new AccessDeniedException("Only store admins can manage users");
+            throw new AccessDeniedException("Only system admins can manage users");
         }
-        if (currentUser.getTenant() == null) {
+        if (currentUser.getTenant() == null && !UserRolePolicy.isSystemAdmin(currentUser.getRole())) {
             throw new AccessDeniedException("Current user has no tenant");
         }
         return currentUser;
     }
 
     private User resolveTenantScopedUser(Long userId, User currentUser) {
+        if (UserRolePolicy.isSystemAdmin(currentUser.getRole())) {
+            return userRepository.findById(userId)
+                    .orElseThrow(() -> new AccessDeniedException("User not found"));
+        }
         return userRepository.findByIdAndTenant_Id(userId, currentUser.getTenant().getId())
                 .orElseThrow(() -> new AccessDeniedException("User not found in your tenant"));
     }
@@ -343,7 +345,7 @@ public class UserController {
 
         auditSuccess(disabled ? "USER_DISABLED" : "USER_ENABLED",
                 String.valueOf(targetUser.getId()),
-                disabled ? "Store admin disabled user access" : "Store admin enabled user access");
+                disabled ? "System admin disabled user access" : "System admin enabled user access");
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("success", true);

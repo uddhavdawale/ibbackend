@@ -48,11 +48,13 @@ public class AuditController {
     private static final Instant MIN_FILTER_INSTANT = Instant.EPOCH;
     private static final Instant MAX_FILTER_INSTANT = Instant.parse("9999-12-31T23:59:59Z");
     private static final Set<String> AUDIT_VIEW_ROLES = Set.of(
+            "system_admin",
             "system_administrator",
             "store_admin",
             "audit_related"
     );
     private static final Set<String> AUDIT_EXPORT_ROLES = Set.of(
+            "system_admin",
             "system_administrator",
             "store_admin"
     );

@@ -1,6 +1,7 @@
 package org.ib.ibbackend.service;
 
 import org.ib.ibbackend.dto.SignupRequest;
+import org.ib.ibbackend.entity.RetailerStatus;
 import org.ib.ibbackend.entity.Tenant;
 import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.repository.TenantRepository;
@@ -20,11 +21,11 @@ public class UserProvisioningService {
     private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-z0-9._-]{3,50}$");
 
     private static final Set<String> ADMIN_CAPABLE_ROLES = new HashSet<>(Arrays.asList(
-            "store_admin", "owner", "admin", "shop_owner", "retailer", "super_admin", "org_admin"
+            "store_admin", "system_admin", "system_administrator", "owner", "admin", "shop_owner", "retailer", "super_admin", "org_admin"
     ));
 
     private static final Set<String> CANONICAL_ROLES = new HashSet<>(List.of(
-            "store_admin", "store_manager", "store_billing_viewer", "store_inventory_viewer", "billing_manager", "inventory_manager", "super_admin", "org_admin"
+            "store_admin", "system_admin", "system_administrator", "store_manager", "store_billing_viewer", "store_inventory_viewer", "billing_manager", "inventory_manager", "super_admin", "org_admin"
     ));
 
     private final TenantRepository tenantRepository;
@@ -107,7 +108,7 @@ public class UserProvisioningService {
         user.setBusinessName(businessName);
         user.setOwnerName(request.getOwnerName() == null || request.getOwnerName().isBlank() ? "Owner" : request.getOwnerName().trim());
         user.setRole(normalizeRole(request.getRole() == null || request.getRole().isBlank() ? "store_admin" : request.getRole()));
-        user.setTenant(createUniqueTenantForUser(businessName, normalizedEmail));
+        user.setTenant(createUniqueTenantForUser(businessName, normalizedEmail, request));
         return user;
     }
 
@@ -124,6 +125,8 @@ public class UserProvisioningService {
         user.setAddress(trimToNull(request.getAddress()));
         user.setCity(trimToNull(request.getCity()));
         user.setPincode(trimToNull(request.getPincode()));
+        user.setApprovalStatus(RetailerStatus.PENDING_APPROVAL);
+        user.setDisabled(true);
         return user;
     }
 
@@ -151,6 +154,7 @@ public class UserProvisioningService {
         String normalized = role.trim().toLowerCase();
         String canonical = switch (normalized) {
             case "retailer", "shop_owner", "owner", "admin" -> "store_admin";
+            case "system_admin", "system_administrator" -> "system_admin";
             case "store_billing_viwer" -> "store_billing_viewer";
             case "store_inventory_viwer" -> "store_inventory_viewer";
             case "store_admin", "store_manager", "store_billing_viewer", "store_inventory_viewer", "billing_manager", "inventory_manager", "super_admin", "org_admin" -> normalized;
@@ -163,7 +167,7 @@ public class UserProvisioningService {
         return canonical;
     }
 
-    private Tenant createUniqueTenantForUser(String businessName, String email) {
+    private Tenant createUniqueTenantForUser(String businessName, String email, SignupRequest request) {
         String normalizedBusinessName = businessName == null ? "Default Business" : businessName.trim();
         if (normalizedBusinessName.isBlank()) {
             normalizedBusinessName = "Default Business";
@@ -175,6 +179,9 @@ public class UserProvisioningService {
         Tenant tenant = new Tenant();
         tenant.setName(tenantName);
         tenant.setCode(tenantCode);
+        tenant.setAddress(trimToNull(request.getAddress()));
+        tenant.setCity(trimToNull(request.getCity()));
+        tenant.setPincode(trimToNull(request.getPincode()));
         return tenantRepository.save(tenant);
     }
 

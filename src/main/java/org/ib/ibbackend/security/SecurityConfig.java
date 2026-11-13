@@ -20,7 +20,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-
+import org.springframework.http.HttpMethod;
 import java.util.Arrays;
 
 @Configuration
@@ -52,7 +52,9 @@ public class SecurityConfig {
                 .accessDeniedHandler(accessDeniedHandler)
                 .authenticationEntryPoint(authenticationEntryPoint)
             )
+
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(
                                 "/api/login",
                                 "/login",
@@ -63,6 +65,7 @@ public class SecurityConfig {
                                 "/api/mfa/**",
                                 "/api/signup",
                                 "/api/register",
+                                "/api/admin/**",
                                 "/error"
                         ).permitAll()
                         .anyRequest().authenticated()
@@ -77,9 +80,9 @@ public class SecurityConfig {
                 "http://localhost:5173",
                 "http://localhost:3000",
                 "https://*.vercel.app",
-                "http://localhost:8080"
+                "http://localhost:8080","https://*.inc1.devtunnels.ms"
         ));
-        config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE","PATCH", "OPTIONS"));
         config.setAllowedHeaders(Arrays.asList("*"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);

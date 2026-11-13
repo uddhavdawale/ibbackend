@@ -42,19 +42,40 @@ public class User {
     private String pan;    // CA Partner
 
 
+    @Column(name = "role")
     private String role= "STORE_ADMIN";   // retailer/partner
 
     private String address;
     private String city;
     private String pincode;
 
+    @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
-    private LocalDateTime deletedAt;
-    private Long deletedBy;
-    @Column(nullable = true)
-    private Boolean disabled = Boolean.FALSE;
-    private boolean emailVerified = false;
 
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
+    @Column(name = "deleted_by")
+    private Long deletedBy;
+
+    @Column(name = "disabled", nullable = true)
+    private Boolean disabled = Boolean.FALSE;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "approval_status", nullable = false)
+    private RetailerStatus approvalStatus = RetailerStatus.APPROVED;
+
+    @Column(name = "approved_at")
+    private LocalDateTime approvedAt;
+
+    @Column(name = "last_admin_action_at")
+    private LocalDateTime lastAdminActionAt;
+
+    @Column(name = "admin_note")
+    private String adminNote;
+
+    @Column(name = "email_verified")
+    private boolean emailVerified = false;
 
     @ManyToOne
     @JoinColumn(name = "tenant_id")
@@ -113,8 +134,35 @@ public class User {
     public Long getDeletedBy() { return deletedBy; }
     public void setDeletedBy(Long deletedBy) { this.deletedBy = deletedBy; }
 
-    public boolean isDisabled() { return Boolean.TRUE.equals(disabled); }
+    public boolean isDisabled() {
+        return Boolean.TRUE.equals(disabled)
+                || approvalStatus == RetailerStatus.PENDING_EMAIL_VERIFICATION
+                || approvalStatus == RetailerStatus.PENDING_APPROVAL
+                || approvalStatus == RetailerStatus.MORE_INFO_REQUIRED
+                || approvalStatus == RetailerStatus.REJECTED
+                || approvalStatus == RetailerStatus.BLOCKED
+                || approvalStatus == RetailerStatus.DISABLED
+                || approvalStatus == RetailerStatus.DELETED
+                || approvalStatus == RetailerStatus.SUSPENDED;
+    }
     public void setDisabled(boolean disabled) { this.disabled = disabled; }
+
+    public RetailerStatus getApprovalStatus() {
+        return approvalStatus == null ? RetailerStatus.APPROVED : approvalStatus;
+    }
+
+    public void setApprovalStatus(RetailerStatus approvalStatus) {
+        this.approvalStatus = approvalStatus == null ? RetailerStatus.APPROVED : approvalStatus;
+    }
+
+    public LocalDateTime getApprovedAt() { return approvedAt; }
+    public void setApprovedAt(LocalDateTime approvedAt) { this.approvedAt = approvedAt; }
+
+    public LocalDateTime getLastAdminActionAt() { return lastAdminActionAt; }
+    public void setLastAdminActionAt(LocalDateTime lastAdminActionAt) { this.lastAdminActionAt = lastAdminActionAt; }
+
+    public String getAdminNote() { return adminNote; }
+    public void setAdminNote(String adminNote) { this.adminNote = adminNote; }
 
     public void setTenant(Tenant tenant) {
         this.tenant = tenant;
