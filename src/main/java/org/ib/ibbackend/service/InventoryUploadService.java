@@ -354,7 +354,7 @@ public class InventoryUploadService {
                 row.setSku(deriveSku(sku, product, hsnSac, poNumber));
                 row.setQty(parseInteger(getCellValue(nextLine, headerMap, "qty"), "Qty"));
                 row.setMinStock(parseInteger(getCellValue(nextLine, headerMap, "minstock"), "Min Stock"));
-                row.setSet(parseInteger(getCellValue(nextLine, headerMap, "set"), "Set"));
+                row.setSet(defaultSet(getCellValue(nextLine, headerMap, "set")));
 
                 BigDecimal mrp = parseBigDecimal(getCellValue(nextLine, headerMap, "mrpitem"), "MRP/ Item");
                 BigDecimal pricePerQty = parseBigDecimal(getCellValue(nextLine, headerMap, "price"), "Price/QTY");
@@ -367,9 +367,6 @@ public class InventoryUploadService {
 
                 if (row.getMinStock() == null) {
                     row.setMinStock(0);
-                }
-                if (row.getSet() == null) {
-                    row.setSet(1);
                 }
                 rows.add(row);
             }
@@ -416,7 +413,7 @@ public class InventoryUploadService {
                 uploadRow.setSku(deriveSku(sku, product, hsnSac, poNumber));
                 uploadRow.setQty(parseInteger(getCellValue(row, headerMap, "qty"), "Qty"));
                 uploadRow.setMinStock(parseInteger(getCellValue(row, headerMap, "minstock"), "Min Stock"));
-                uploadRow.setSet(parseInteger(getCellValue(row, headerMap, "set"), "Set"));
+                uploadRow.setSet(defaultSet(getCellValue(row, headerMap, "set")));
 
                 BigDecimal mrp = parseBigDecimal(getCellValue(row, headerMap, "mrpitem"), "MRP/ Item");
                 BigDecimal pricePerQty = parseBigDecimal(getCellValue(row, headerMap, "price"), "Price/QTY");
@@ -429,9 +426,6 @@ public class InventoryUploadService {
 
                 if (uploadRow.getMinStock() == null) {
                     uploadRow.setMinStock(0);
-                }
-                if (uploadRow.getSet() == null) {
-                    uploadRow.setSet(1);
                 }
                 rows.add(uploadRow);
             }
@@ -456,7 +450,7 @@ public class InventoryUploadService {
                 row.setSku(deriveSku(sku, product, hsnSac, poNumber));
                 row.setQty(integerValue(getMappedValue(raw, "qty", "quantity")));
                 row.setMinStock(integerValue(getMappedValue(raw, "min stock", "minstock")));
-                row.setSet(integerValue(getMappedValue(raw, "set")));
+                row.setSet(defaultSet(stringValue(getMappedValue(raw, "set"))));
 
                 BigDecimal mrp = bigDecimalValue(getMappedValue(raw, "mrp/ item", "mrp item", "mrp"));
                 BigDecimal pricePerQty = bigDecimalValue(getMappedValue(raw, "price/qty", "price per qty", "price", "unit price"));
@@ -469,9 +463,6 @@ public class InventoryUploadService {
 
                 if (row.getMinStock() == null) {
                     row.setMinStock(0);
-                }
-                if (row.getSet() == null) {
-                    row.setSet(1);
                 }
                 rows.add(row);
             }
@@ -539,8 +530,8 @@ public class InventoryUploadService {
             errors.add("Price must be a positive number");
         }
 
-        if (row.getSet() == null || row.getSet() <= 0) {
-            errors.add("Set must be a positive number");
+        if (row.getSet() == null || row.getSet().length() > 100) {
+            errors.add("Set must be at most 100 characters");
         }
 
         if (row.getCategory() == null || row.getCategory().isBlank()) {
@@ -670,6 +661,11 @@ public class InventoryUploadService {
         return value == null ? "" : value.trim();
     }
 
+    private String defaultSet(String value) {
+        String normalized = normalizeText(value);
+        return normalized.isBlank() ? "1" : normalized;
+    }
+
     private String deriveSku(String sku, String product, String hsnSac, String poNumber) {
         String normalizedSku = normalizeText(sku);
         if (!normalizedSku.isBlank()) {
@@ -752,7 +748,7 @@ public class InventoryUploadService {
                 && Objects.equals(normalizeText(existingProduct.getHsnSac()), normalizeText(row.getHsnSac()))
                 && (existingPrice == null ? incomingPrice == null : existingPrice.compareTo(incomingPrice == null ? BigDecimal.ZERO : incomingPrice) == 0)
                 && (existingMrp == null ? incomingMrp == null : existingMrp.compareTo(incomingMrp == null ? BigDecimal.ZERO : incomingMrp) == 0)
-                && Objects.equals(existingProduct.getSetSize(), row.getSet())
+                && Objects.equals(normalizeText(existingProduct.getSetSize()), normalizeText(row.getSet()))
                 && Objects.equals(normalizeText(existingProduct.getCategory()), normalizeText(row.getCategory()));
     }
 

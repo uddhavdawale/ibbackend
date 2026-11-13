@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.OAEPParameterSpec;
+import javax.crypto.spec.PSource;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
@@ -13,6 +15,7 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PublicKey;
 import java.security.SecureRandom;
+import java.security.spec.MGF1ParameterSpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 
@@ -70,8 +73,9 @@ class LoginCryptoServiceTest {
         aesCipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(aesKey, "AES"), new GCMParameterSpec(128, iv));
         byte[] encryptedPayload = aesCipher.doFinal(payloadJson.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
-        Cipher rsaCipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
-        rsaCipher.init(Cipher.ENCRYPT_MODE, pair.getPublic());
+        Cipher rsaCipher = Cipher.getInstance("RSA/ECB/OAEPPadding");
+        rsaCipher.init(Cipher.ENCRYPT_MODE, pair.getPublic(), new OAEPParameterSpec(
+            "SHA-256", "MGF1", MGF1ParameterSpec.SHA256, PSource.PSpecified.DEFAULT));
         byte[] encryptedAesKey = rsaCipher.doFinal(aesKey);
 
         LoginRequest encryptedRequest = new LoginRequest();
@@ -102,8 +106,9 @@ class LoginCryptoServiceTest {
         aesCipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(aesKey, "AES"), new GCMParameterSpec(128, iv));
         byte[] encryptedPayload = aesCipher.doFinal(payloadJson.getBytes(StandardCharsets.UTF_8));
 
-        Cipher rsaCipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
-        rsaCipher.init(Cipher.ENCRYPT_MODE, publicKey);
+        Cipher rsaCipher = Cipher.getInstance("RSA/ECB/OAEPPadding");
+        rsaCipher.init(Cipher.ENCRYPT_MODE, publicKey, new OAEPParameterSpec(
+            "SHA-256", "MGF1", MGF1ParameterSpec.SHA256, PSource.PSpecified.DEFAULT));
         byte[] encryptedAesKey = rsaCipher.doFinal(aesKey);
 
         LoginRequest encryptedRequest = new LoginRequest();

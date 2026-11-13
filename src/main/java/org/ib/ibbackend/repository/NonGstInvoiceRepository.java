@@ -1,5 +1,6 @@
 package org.ib.ibbackend.repository;
 
+import org.ib.ibbackend.dto.CustomerInvoiceRecord;
 import org.ib.ibbackend.entity.NonGstInvoice;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -26,4 +27,8 @@ public interface NonGstInvoiceRepository extends JpaRepository<NonGstInvoice, Lo
     @Query("SELECT i FROM NonGstInvoice i WHERE i.tenant.id = :tenantId AND LOWER(i.customerPhone) = LOWER(:phone)")
     List<NonGstInvoice> findByTenantIdAndCustomerPhone(@Param("tenantId") Long tenantId,
                                                       @Param("phone") String phone);
+
+    @Query("SELECT new org.ib.ibbackend.dto.CustomerInvoiceRecord(i.id, i.invoiceNo, i.customerName, i.customerPhone, i.grandTotal, i.paidAmount, i.date) " +
+            "FROM NonGstInvoice i WHERE i.tenant.id = :tenantId")
+    List<CustomerInvoiceRecord> findCustomerRecordsByTenantId(@Param("tenantId") Long tenantId);
 }

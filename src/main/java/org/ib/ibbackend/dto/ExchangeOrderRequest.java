@@ -1,5 +1,7 @@
 package org.ib.ibbackend.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -9,6 +11,7 @@ public class ExchangeOrderRequest {
     private Long invoiceId;
     private String reason;
     private BigDecimal newInvoiceAmount = BigDecimal.ZERO;
+    @JsonAlias({"exchangeItems", "exchange_items", "items"})
     private List<Item> items = new ArrayList<>();
 
     public Long getInvoiceId() {
@@ -36,7 +39,7 @@ public class ExchangeOrderRequest {
     }
 
     public List<Item> getItems() {
-        return items;
+        return items == null ? new ArrayList<>() : items;
     }
 
     public void setItems(List<Item> items) {
@@ -44,9 +47,13 @@ public class ExchangeOrderRequest {
     }
 
     public static class Item {
+        @JsonAlias({"product_id", "id", "productId"})
         private Long productId;
+        @JsonAlias({"qty", "count", "returnQty"})
         private Integer quantity;
+        @JsonAlias({"product_name", "name"})
         private String productName;
+        @JsonAlias({"price", "amount"})
         private BigDecimal unitPrice;
 
         public Long getProductId() {

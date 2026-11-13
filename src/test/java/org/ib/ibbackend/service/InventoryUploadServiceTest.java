@@ -48,7 +48,7 @@ class InventoryUploadServiceTest {
                 "inventory.csv",
                 "text/csv",
             ("Item,HSN/SAC,MRP/ Item,QTY,Set,Price/QTY,PO Number,Min Stock,Category\n" +
-             "Rice,RICE-001,250,20,1,250,PO-1001,5,Groceries\n" +
+             "Rice,RICE-001,250,20,Pack of 6,250,PO-1001,5,Groceries\n" +
              "Soap,SOAP-003,80,50,1,80,PO-1002,15,Personal Care\n").getBytes()
         );
 
@@ -60,6 +60,7 @@ class InventoryUploadServiceTest {
         assertEquals(0, result.getSkippedCount());
         assertEquals("RICE-001", String.valueOf(result.getRecords().get(0).get("hsnSac")));
         assertEquals("PO-1001", String.valueOf(result.getRecords().get(0).get("poNumber")));
+        assertEquals("Pack of 6", result.getRecords().get(0).get("set"));
     }
 
     @Test
@@ -89,6 +90,29 @@ class InventoryUploadServiceTest {
         assertEquals("785693254", String.valueOf(result.getRecords().get(0).get("sku")));
         assertEquals("110000", String.valueOf(result.getRecords().get(0).get("mrp")));
         assertEquals("98000", String.valueOf(result.getRecords().get(0).get("pricePerQty")));
+    }
+
+    @Test
+    void shouldAcceptDecimalAndStringSetValuesDuringUpload() {
+        ProductRepository productRepository = mock(ProductRepository.class);
+        InventoryUploadService service = new InventoryUploadService(productRepository);
+
+        when(productRepository.findBySku(any())).thenReturn(Optional.empty());
+        when(productRepository.save(any(org.ib.ibbackend.entity.Product.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = service.processUpload(
+                null,
+                null,
+                "[{\"product\":\"Rice\",\"sku\":\"RICE-001\",\"hsnSac\":\"RICE-001\",\"qty\":\"5\",\"minStock\":\"2\",\"set\":\"2 pcs\",\"price\":\"100.00\",\"mrp\":\"120.00\",\"category\":\"Groceries\"}]",
+                9L,
+                22L
+        );
+
+        assertTrue(result.isSuccess());
+        assertEquals(5, result.getRecords().get(0).get("qty"));
+        assertEquals("2 pcs", result.getRecords().get(0).get("set"));
+        assertEquals(new BigDecimal("120.00"), result.getRecords().get(0).get("mrp"));
     }
 
     @Test
@@ -211,7 +235,7 @@ class InventoryUploadServiceTest {
         existing.setHsnSac("RICE-001");
         existing.setPrice(new BigDecimal("100.00"));
         existing.setMrp(new BigDecimal("100.00"));
-        existing.setSetSize(1);
+        existing.setSetSize("1");
         existing.setPoNumber("PO-1001");
         existing.setCategory("Groceries");
         existing.setQuantity(3);
@@ -290,7 +314,7 @@ class InventoryUploadServiceTest {
         existing.setPoNumber("PO-1001");
         existing.setPrice(new BigDecimal("100.00"));
         existing.setMrp(new BigDecimal("130.00"));
-        existing.setSetSize(1);
+        existing.setSetSize("1");
         existing.setCategory("Groceries");
         existing.setQuantity(10);
         existing.setTenant(tenant);
@@ -342,7 +366,7 @@ class InventoryUploadServiceTest {
         existing.setHsnSac("RICE-001");
         existing.setPrice(new BigDecimal("100.00"));
         existing.setMrp(new BigDecimal("130.00"));
-        existing.setSetSize(1);
+        existing.setSetSize("1");
         existing.setPoNumber("PO-1001");
         existing.setCategory("Groceries");
         existing.setQuantity(10);

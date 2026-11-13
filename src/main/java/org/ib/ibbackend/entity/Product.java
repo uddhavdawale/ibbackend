@@ -37,8 +37,8 @@ public class Product {
     @Column(name = "hsn_sac")
     private String hsnSac;
 
-    @Column(name = "set_size")
-    private Integer setSize = 1;
+    @Column(name = "set_size", length = 100)
+    private String setSize = "1";
 
     @Column(name = "po_number")
     private String poNumber;
@@ -139,11 +139,11 @@ public class Product {
         this.hsnSac = hsnSac;
     }
 
-    public Integer getSetSize() {
+    public String getSetSize() {
         return setSize;
     }
 
-    public void setSetSize(Integer setSize) {
+    public void setSetSize(String setSize) {
         this.setSize = setSize;
     }
 

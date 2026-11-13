@@ -12,7 +12,7 @@ public record ProductResponse(
         Integer minStock,
         BigDecimal price,
         BigDecimal mrp,
-        Integer set,
+        String set,
         String poNumber,
         Integer salesCount,
         String category,
@@ -21,6 +21,6 @@ public record ProductResponse(
         Long uploadedById
 ) {
     public ProductResponse(Long id, String name, String sku, BigDecimal price, Integer tenantId) {
-        this(id, name, sku, null, 0, 0, price, price, 1, null, 0, "General", LocalDateTime.now(), tenantId, null);
+        this(id, name, sku, null, 0, 0, price, price, "1", null, 0, "General", LocalDateTime.now(), tenantId, null);
     }
 }

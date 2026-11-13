@@ -1,7 +1,9 @@
 package org.ib.ibbackend.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.ib.ibbackend.dto.ReturnOrderRequest;
 import org.ib.ibbackend.entity.Invoice;
+import org.ib.ibbackend.entity.Product;
 import org.ib.ibbackend.entity.ReturnOrder;
 import org.ib.ibbackend.entity.ReturnOrderItem;
 import org.ib.ibbackend.entity.Tenant;
@@ -22,6 +24,18 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class ReturnOrderServiceTest {
+
+    @Test
+    void shouldAcceptFrontendReturnItemsAlias() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        String json = "{\"invoiceId\":10,\"reason\":\"Damaged item\",\"returnItems\":[{\"productId\":5,\"productName\":\"Rice\",\"quantity\":1,\"unitPrice\":100.00}]}";
+
+        ReturnOrderRequest request = objectMapper.readValue(json, ReturnOrderRequest.class);
+
+        assertNotNull(request);
+        assertEquals(1, request.getItems().size());
+        assertEquals(5L, request.getItems().get(0).getProductId());
+    }
 
     @Test
     void shouldCreateReturnOrderWithCalculatedAmount() {
@@ -52,7 +66,13 @@ class ReturnOrderServiceTest {
         tenant.setId(1L);
         invoice.setTenant(tenant);
 
+        Product product = new Product();
+        product.setId(5L);
+        product.setName("Rice");
+        product.setQuantity(10);
+
         when(invoiceRepository.findById(10L)).thenReturn(Optional.of(invoice));
+        when(productRepository.findById(5L)).thenReturn(Optional.of(product));
         when(returnOrderRepository.save(any(ReturnOrder.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         ReturnOrderService service = new ReturnOrderService(invoiceRepository, productRepository, returnOrderRepository, inventorySecurityService);
@@ -64,7 +84,7 @@ class ReturnOrderServiceTest {
         itemRequest.setProductId(5L);
         itemRequest.setQuantity(1);
         itemRequest.setProductName("Rice");
-        itemRequest.setUnitPrice(new BigDecimal("100"));
+        itemRequest.setUnitPrice(new BigDecimal("100.00"));
         request.setItems(List.of(itemRequest));
 
         ReturnOrder saved = service.createReturnOrder(request);

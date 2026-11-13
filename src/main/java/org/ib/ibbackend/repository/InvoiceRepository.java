@@ -1,5 +1,6 @@
 package org.ib.ibbackend.repository;
 
+import org.ib.ibbackend.dto.CustomerInvoiceRecord;
 import org.ib.ibbackend.entity.Invoice;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -83,7 +84,11 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     List<Invoice> findByTenantIdAndCustomerPhone(@Param("tenantId") Long tenantId,
                                                 @Param("phone") String phone);
 
-        @Query("SELECT i FROM Invoice i WHERE i.tenant.id = :tenantId AND LOWER(i.customerEmail) = LOWER(:email)")
-        List<Invoice> findByTenantIdAndCustomerEmail(@Param("tenantId") Long tenantId,
-                                                                                                @Param("email") String email);
+    @Query("SELECT i FROM Invoice i WHERE i.tenant.id = :tenantId AND LOWER(i.customerEmail) = LOWER(:email)")
+    List<Invoice> findByTenantIdAndCustomerEmail(@Param("tenantId") Long tenantId,
+                                                 @Param("email") String email);
+
+    @Query("SELECT new org.ib.ibbackend.dto.CustomerInvoiceRecord(i.id, i.invoiceNo, i.customerName, i.customerPhone, i.customerEmail, i.grandTotal, i.paidAmount, i.date) " +
+            "FROM Invoice i WHERE i.tenant.id = :tenantId")
+    List<CustomerInvoiceRecord> findCustomerRecordsByTenantId(@Param("tenantId") Long tenantId);
 }

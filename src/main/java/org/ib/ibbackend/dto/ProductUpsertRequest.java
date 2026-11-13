@@ -11,7 +11,7 @@ public class ProductUpsertRequest {
     private Integer minStock;
     private BigDecimal price;
     private BigDecimal mrp;
-    private Integer setSize;
+    private String setSize;
     private String poNumber;
     private Integer salesCount;
     private String category;
@@ -73,11 +73,11 @@ public class ProductUpsertRequest {
         this.mrp = mrp;
     }
 
-    public Integer getSetSize() {
+    public String getSetSize() {
         return setSize;
     }
 
-    public void setSetSize(Integer setSize) {
+    public void setSetSize(String setSize) {
         this.setSize = setSize;
     }
 

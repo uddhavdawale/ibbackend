@@ -41,7 +41,6 @@ public class NonGstInvoiceService {
     private final NonGstInvoiceRepository nonGstInvoiceRepository;
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
-    private final SequenceService sequenceService;
     private final AuditLogService auditLogService;
     private final InventorySecurityService inventorySecurityService;
     private final CustomerProfileService customerProfileService;
@@ -51,7 +50,6 @@ public class NonGstInvoiceService {
             NonGstInvoiceRepository nonGstInvoiceRepository,
             ProductRepository productRepository,
             UserRepository userRepository,
-            SequenceService sequenceService,
             AuditLogService auditLogService,
             InventorySecurityService inventorySecurityService,
             CustomerProfileService customerProfileService
@@ -59,7 +57,6 @@ public class NonGstInvoiceService {
         this.nonGstInvoiceRepository = nonGstInvoiceRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
-        this.sequenceService = sequenceService;
         this.auditLogService = auditLogService;
         this.inventorySecurityService = inventorySecurityService;
         this.customerProfileService = customerProfileService;
@@ -68,10 +65,9 @@ public class NonGstInvoiceService {
     public NonGstInvoiceService(
             NonGstInvoiceRepository nonGstInvoiceRepository,
             ProductRepository productRepository,
-            UserRepository userRepository,
-            SequenceService sequenceService
+            UserRepository userRepository
     ) {
-        this(nonGstInvoiceRepository, productRepository, userRepository, sequenceService, null, null, null);
+        this(nonGstInvoiceRepository, productRepository, userRepository, null, null, null);
     }
 
     @Transactional
@@ -88,7 +84,7 @@ public class NonGstInvoiceService {
 
         validateRequest(request);
 
-        String invoiceNo = String.format("INV-%d/%04d", java.time.Year.now().getValue(), sequenceService.nextValue("non_gst_invoice"));
+        String invoiceNo = InvoiceNumberGenerator.generate();
 
         NonGstInvoice invoice = new NonGstInvoice();
         invoice.setInvoiceNo(invoiceNo);

@@ -13,6 +13,12 @@ public class NonGstInvoiceRequest {
     private String billType;
     private Boolean isGstInvoice;
     private BigDecimal paidAmount = BigDecimal.ZERO;
+    private BigDecimal amountPaid;
+    private BigDecimal receivedAmount;
+    private BigDecimal previousBalance;
+    private BigDecimal balanceAmount;
+    private BigDecimal currentBalance;
+    private BigDecimal totalAmount;
     private List<NonGstInvoiceRequestItem> items = new ArrayList<>();
 
     public String getCustomerName() {
@@ -72,11 +78,68 @@ public class NonGstInvoiceRequest {
     }
 
     public BigDecimal getPaidAmount() {
-        return paidAmount == null ? BigDecimal.ZERO : paidAmount;
+        if (paidAmount != null) {
+            return paidAmount;
+        }
+        if (amountPaid != null) {
+            return amountPaid;
+        }
+        if (receivedAmount != null) {
+            return receivedAmount;
+        }
+        return BigDecimal.ZERO;
     }
 
     public void setPaidAmount(BigDecimal paidAmount) {
         this.paidAmount = paidAmount;
+    }
+
+    public BigDecimal getAmountPaid() {
+        return amountPaid == null ? getPaidAmount() : amountPaid;
+    }
+
+    public void setAmountPaid(BigDecimal amountPaid) {
+        this.amountPaid = amountPaid;
+    }
+
+    public BigDecimal getReceivedAmount() {
+        return receivedAmount == null ? getPaidAmount() : receivedAmount;
+    }
+
+    public void setReceivedAmount(BigDecimal receivedAmount) {
+        this.receivedAmount = receivedAmount;
+    }
+
+    public BigDecimal getPreviousBalance() {
+        return previousBalance == null ? BigDecimal.ZERO : previousBalance;
+    }
+
+    public void setPreviousBalance(BigDecimal previousBalance) {
+        this.previousBalance = previousBalance;
+    }
+
+    public BigDecimal getBalanceAmount() {
+        return balanceAmount == null ? BigDecimal.ZERO : balanceAmount;
+    }
+
+    public void setBalanceAmount(BigDecimal balanceAmount) {
+        this.balanceAmount = balanceAmount;
+    }
+
+    public BigDecimal getCurrentBalance() {
+        return currentBalance == null ? BigDecimal.ZERO : currentBalance;
+    }
+
+    public void setCurrentBalance(BigDecimal currentBalance) {
+        this.currentBalance = currentBalance;
+    }
+
+    public BigDecimal getTotalAmount() {
+        return totalAmount == null ? BigDecimal.ZERO : totalAmount;
+    }
+
+    public void setTotalAmount(BigDecimal totalAmount) {
+        this.totalAmount = totalAmount;
     }
 
     public List<NonGstInvoiceRequestItem> getItems() {

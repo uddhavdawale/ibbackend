@@ -41,9 +41,8 @@ class NonGstInvoiceServiceTest {
         NonGstInvoiceRepository invoiceRepository = mock(NonGstInvoiceRepository.class);
         ProductRepository productRepository = mock(ProductRepository.class);
         UserRepository userRepository = mock(UserRepository.class);
-        SequenceService sequenceService = mock(SequenceService.class);
 
-        NonGstInvoiceService service = new NonGstInvoiceService(invoiceRepository, productRepository, userRepository, sequenceService);
+        NonGstInvoiceService service = new NonGstInvoiceService(invoiceRepository, productRepository, userRepository);
 
         Tenant tenant = new Tenant();
         tenant.setId(7);
@@ -68,7 +67,6 @@ class NonGstInvoiceServiceTest {
         when(userRepository.findByEmail("owner@example.com")).thenReturn(Optional.of(user));
         when(productRepository.findByIdAndTenantIdForUpdate(12L, 7L)).thenReturn(Optional.of(product));
         when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(sequenceService.nextValue("non_gst_invoice")).thenReturn(104);
         when(invoiceRepository.save(any(NonGstInvoice.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         NonGstInvoiceRequestItem item = new NonGstInvoiceRequestItem();
@@ -102,7 +100,7 @@ class NonGstInvoiceServiceTest {
         assertEquals(new BigDecimal("300.00"), saved.getSubtotal());
         assertEquals(new BigDecimal("0.00"), saved.getGstAmount());
         assertEquals(new BigDecimal("300.00"), saved.getGrandTotal());
-        assertEquals("INV-2026/0104", saved.getInvoiceNo());
+        assertTrue(saved.getInvoiceNo().matches("INV-\\d{12}-\\d{4}"));
         assertEquals(8, product.getQuantity());
         assertEquals(7, saved.getTenant().getId());
         assertEquals(22L, saved.getUser().getId());
@@ -113,9 +111,8 @@ class NonGstInvoiceServiceTest {
         NonGstInvoiceRepository invoiceRepository = mock(NonGstInvoiceRepository.class);
         ProductRepository productRepository = mock(ProductRepository.class);
         UserRepository userRepository = mock(UserRepository.class);
-        SequenceService sequenceService = mock(SequenceService.class);
 
-        NonGstInvoiceService service = new NonGstInvoiceService(invoiceRepository, productRepository, userRepository, sequenceService);
+        NonGstInvoiceService service = new NonGstInvoiceService(invoiceRepository, productRepository, userRepository);
 
         Tenant tenant = new Tenant();
         tenant.setId(7);

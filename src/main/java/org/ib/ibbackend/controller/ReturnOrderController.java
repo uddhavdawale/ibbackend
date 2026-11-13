@@ -11,6 +11,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @CrossOrigin(originPatterns = "*")
@@ -30,6 +31,11 @@ public class ReturnOrderController {
     @PostMapping
     public ResponseEntity<ReturnOrder> createReturnOrder(@RequestBody ReturnOrderRequest request) {
         return ResponseEntity.ok(returnOrderService.createReturnOrder(request));
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, String>> handleBadRequest(IllegalArgumentException ex) {
+        return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
     }
 
     @GetMapping

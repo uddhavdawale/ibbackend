@@ -13,7 +13,7 @@ import org.ib.ibbackend.repository.ProductRepository;
 import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.service.AuditLogService;
 import org.ib.ibbackend.service.InventorySecurityService;
-import org.ib.ibbackend.service.SequenceService;
+import org.ib.ibbackend.service.InvoiceNumberGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,9 +55,6 @@ public class InvoiceController {
 
     @Autowired
     private UserRepository userRepository;
-
-    @Autowired private
-    SequenceService seqService;
 
     @Autowired(required = false)
     private AuditLogService auditLogService;
@@ -322,13 +319,50 @@ public class InvoiceController {
     @Transactional
     public ResponseEntity<?> createInvoice(@RequestBody InvoiceRequest invoiceRequest) {
         try {
-            String invoiceNo = String.format("INV-%d/%04d",
-                    java.time.Year.now().getValue(),
-                    seqService.nextValue("invoice"));
+            if (invoiceRequest == null) {
+                throw new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.BAD_REQUEST, "Request body is required");
+            }
+
+            if (SecurityContextHolder.getContext().getAuthentication() == null
+                    || !SecurityContextHolder.getContext().getAuthentication().isAuthenticated()
+                    || "anonymousUser".equals(SecurityContextHolder.getContext().getAuthentication().getPrincipal())) {
+                throw new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.UNAUTHORIZED, "Authenticated user is required");
+            }
+
             Long tenantId = TenantContext.getCurrentTenant();
             if (tenantId == null) {
                 throw new org.springframework.security.access.AccessDeniedException("Access denied");
             }
+
+            String paymentStatus = normalizePaymentIntent(invoiceRequest.getStatus(), invoiceRequest.getPaymentStatus());
+            if (paymentStatus == null || paymentStatus.isBlank()) {
+                throw new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.BAD_REQUEST, "Invalid or empty paymentStatus value");
+            }
+
+            if (invoiceRequest.getItems() == null || invoiceRequest.getItems().isEmpty()) {
+                throw new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.BAD_REQUEST, "At least one invoice item is required");
+            }
+
+            for (InvoiceItem item : invoiceRequest.getItems()) {
+                if (item == null || item.getProductId() == null) {
+                    throw new org.springframework.web.server.ResponseStatusException(
+                            org.springframework.http.HttpStatus.BAD_REQUEST, "Each invoice item requires a valid productId");
+                }
+                if (item.getQty() == null || item.getQty() <= 0) {
+                    throw new org.springframework.web.server.ResponseStatusException(
+                            org.springframework.http.HttpStatus.BAD_REQUEST, "Each item qty must be greater than zero");
+                }
+                if (item.getPrice() == null || item.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
+                    throw new org.springframework.web.server.ResponseStatusException(
+                            org.springframework.http.HttpStatus.BAD_REQUEST, "Each item price must be positive");
+                }
+            }
+
+            String invoiceNo = InvoiceNumberGenerator.generate();
 
             for (InvoiceItem item : invoiceRequest.getItems()) {
                 deductStockForSale(item, invoiceNo, tenantId);
@@ -349,17 +383,27 @@ public class InvoiceController {
             BigDecimal gstAmount = invoiceItems.stream()
                     .map(item -> item.getItemGst() == null ? BigDecimal.ZERO : item.getItemGst())
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal grandTotal = subtotal.add(gstAmount);
+            BigDecimal grandTotal = subtotal.add(gstAmount).setScale(2, RoundingMode.HALF_UP);
 
+            BigDecimal providedPayment = resolveRequestAmount(invoiceRequest);
             BigDecimal paidAmount = resolvePaidAmount(
                     grandTotal,
-                    invoiceRequest.getPaidAmount(),
+                    providedPayment,
                     invoiceRequest.getStatus(),
                     invoiceRequest.getPaymentStatus()
             );
 
+            if (paidAmount.compareTo(BigDecimal.ZERO) < 0) {
+                throw new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.BAD_REQUEST, "Paid amount cannot be negative");
+            }
+            if (grandTotal.compareTo(BigDecimal.ZERO) < 0) {
+                throw new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.BAD_REQUEST, "Invoice total cannot be negative");
+            }
+
             String clientStatusSummary = String.format("status=%s, paymentStatus=%s, paidAmount=%s",
-                    invoiceRequest.getStatus(), invoiceRequest.getPaymentStatus(), invoiceRequest.getPaidAmount());
+                    invoiceRequest.getStatus(), invoiceRequest.getPaymentStatus(), providedPayment);
             log.info("Checkout payment intent for tenant {}: {}", tenantId, clientStatusSummary);
 
             Invoice invoice = new Invoice(invoiceNo, invoiceRequest.getCustomerName(),
@@ -401,6 +445,20 @@ public class InvoiceController {
             auditFailure("INVOICE_CREATE", "N/A", "Invoice save failed: " + e.getClass().getSimpleName());
             throw e;
         }
+    }
+
+    private BigDecimal resolveRequestAmount(InvoiceRequest invoiceRequest) {
+        BigDecimal candidate = invoiceRequest.getPaidAmount();
+        if (candidate == null || candidate.compareTo(BigDecimal.ZERO) < 0) {
+            candidate = invoiceRequest.getAmountPaid();
+        }
+        if (candidate == null || candidate.compareTo(BigDecimal.ZERO) < 0) {
+            candidate = invoiceRequest.getReceivedAmount();
+        }
+        if (candidate == null || candidate.compareTo(BigDecimal.ZERO) < 0) {
+            candidate = BigDecimal.ZERO;
+        }
+        return candidate;
     }
 
     private Invoice.PaymentStatus resolvePaymentStatus(BigDecimal paidAmount, BigDecimal grandTotal) {

@@ -11,6 +11,14 @@ public class InvoiceRequest {
     private String status;
     private String paymentStatus;
     private BigDecimal paidAmount = BigDecimal.ZERO;
+    private BigDecimal amountPaid;
+    private BigDecimal receivedAmount;
+    private BigDecimal previousBalance;
+    private BigDecimal balanceAmount;
+    private BigDecimal currentBalance;
+    private BigDecimal totalAmount;
+    private String billType;
+    private Boolean isGstInvoice;
     private List<InvoiceItem> items;
 
     // ✅ Jackson needs no-arg constructor
@@ -44,8 +52,43 @@ public class InvoiceRequest {
     public String getPaymentStatus() { return paymentStatus; }
     public void setPaymentStatus(String paymentStatus) { this.paymentStatus = paymentStatus; }
 
-    public BigDecimal getPaidAmount() { return paidAmount == null ? BigDecimal.ZERO : paidAmount; }
+    public BigDecimal getPaidAmount() {
+        if (paidAmount != null) {
+            return paidAmount;
+        }
+        if (amountPaid != null) {
+            return amountPaid;
+        }
+        if (receivedAmount != null) {
+            return receivedAmount;
+        }
+        return BigDecimal.ZERO;
+    }
     public void setPaidAmount(BigDecimal paidAmount) { this.paidAmount = paidAmount == null ? BigDecimal.ZERO : paidAmount; }
+
+    public BigDecimal getAmountPaid() { return amountPaid == null ? getPaidAmount() : amountPaid; }
+    public void setAmountPaid(BigDecimal amountPaid) { this.amountPaid = amountPaid; }
+
+    public BigDecimal getReceivedAmount() { return receivedAmount == null ? getPaidAmount() : receivedAmount; }
+    public void setReceivedAmount(BigDecimal receivedAmount) { this.receivedAmount = receivedAmount; }
+
+    public BigDecimal getPreviousBalance() { return previousBalance == null ? BigDecimal.ZERO : previousBalance; }
+    public void setPreviousBalance(BigDecimal previousBalance) { this.previousBalance = previousBalance; }
+
+    public BigDecimal getBalanceAmount() { return balanceAmount == null ? BigDecimal.ZERO : balanceAmount; }
+    public void setBalanceAmount(BigDecimal balanceAmount) { this.balanceAmount = balanceAmount; }
+
+    public BigDecimal getCurrentBalance() { return currentBalance == null ? BigDecimal.ZERO : currentBalance; }
+    public void setCurrentBalance(BigDecimal currentBalance) { this.currentBalance = currentBalance; }
+
+    public BigDecimal getTotalAmount() { return totalAmount == null ? BigDecimal.ZERO : totalAmount; }
+    public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }
+
+    public String getBillType() { return billType; }
+    public void setBillType(String billType) { this.billType = billType; }
+
+    public Boolean getIsGstInvoice() { return isGstInvoice == null ? Boolean.TRUE : isGstInvoice; }
+    public void setIsGstInvoice(Boolean gstInvoice) { isGstInvoice = gstInvoice; }
 
     public List<InvoiceItem> getItems() { return items; }
     public void setItems(List<InvoiceItem> items) { this.items = items; }

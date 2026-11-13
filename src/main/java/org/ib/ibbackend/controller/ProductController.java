@@ -90,7 +90,7 @@ public class ProductController {
                 product.getMinStock(),
                 product.getPrice(),
                 product.getMrp() != null ? product.getMrp() : product.getPrice(),
-                product.getSetSize() != null ? product.getSetSize() : 1,
+                product.getSetSize() != null ? product.getSetSize() : "1",
                 product.getPoNumber(),
                 product.getSalesCount() != null ? product.getSalesCount() : 0,
                 product.getCategory(),
@@ -150,8 +150,8 @@ public class ProductController {
         if (entity.getMrp() == null) {
             entity.setMrp(entity.getPrice());
         }
-        if (entity.getSetSize() == null || entity.getSetSize() <= 0) {
-            entity.setSetSize(1);
+        if (entity.getSetSize() == null || entity.getSetSize().isBlank()) {
+            entity.setSetSize("1");
         }
         if (entity.getSalesCount() == null || entity.getSalesCount() < 0) {
             entity.setSalesCount(0);
@@ -217,7 +217,7 @@ public class ProductController {
                     existing.setPrice(requestData.getPrice());
                     existing.setMrp(requestData.getMrp() != null ? requestData.getMrp() : requestData.getPrice());
                     existing.setHsnSac(normalizeSku(requestData.getHsnSac()) != null ? normalizeSku(requestData.getHsnSac()) : resolvedCode);
-                    existing.setSetSize(requestData.getSetSize() == null || requestData.getSetSize() <= 0 ? 1 : requestData.getSetSize());
+                    existing.setSetSize(requestData.getSetSize() == null || requestData.getSetSize().isBlank() ? "1" : requestData.getSetSize());
                     existing.setPoNumber(requestData.getPoNumber());
                     if (requestData.getSalesCount() != null && requestData.getSalesCount() >= 0) {
                         existing.setSalesCount(requestData.getSalesCount());

@@ -8,7 +8,7 @@ public class InventoryUploadRow {
     private String hsnSac;
     private Integer qty;
     private Integer minStock;
-    private Integer set = 1;
+    private String set = "1";
     private BigDecimal price;
     private BigDecimal mrp;
     private BigDecimal pricePerQty;
@@ -55,11 +55,11 @@ public class InventoryUploadRow {
         this.minStock = minStock;
     }
 
-    public Integer getSet() {
+    public String getSet() {
         return set;
     }
 
-    public void setSet(Integer set) {
+    public void setSet(String set) {
         this.set = set;
     }
 
