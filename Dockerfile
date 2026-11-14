@@ -25,4 +25,4 @@ RUN chown spring:spring /app/app.jar
 USER spring:spring
 
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+ENTRYPOINT ["sh", "-c", "if [ -n \"$RAILWAY_ENVIRONMENT\" ] || [ -n \"$RAILWAY_PROJECT_ID\" ]; then exec java -Dspring.profiles.active=railway -jar /app/app.jar; else exec java -jar /app/app.jar; fi"]

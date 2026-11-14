@@ -2,8 +2,10 @@
 
 ## Deploy to Railway
 
-The Railway configuration builds the existing `Dockerfile` and activates the
-Spring `railway` profile. Add a PostgreSQL service to the Railway project, then
+The Railway configuration builds the existing `Dockerfile`. The container
+activates the Spring `railway` profile when it detects Railway runtime
+environment variables; local Docker runs keep the default profile. Add a
+PostgreSQL service to the Railway project, then
 reference its `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD`
 variables in the backend service (use Railway variable references if the
 database is a separate service). The profile assembles the JDBC URL from these
