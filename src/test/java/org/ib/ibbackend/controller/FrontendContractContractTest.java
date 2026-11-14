@@ -2,7 +2,8 @@ package org.ib.ibbackend.controller;
 
 import org.ib.ibbackend.dto.InvoiceRequest;
 import org.ib.ibbackend.dto.LoginRequest;
-import org.ib.ibbackend.dto.RefreshTokenRequest;
+import org.ib.ibbackend.dto.LoginResponse;
+import org.ib.ibbackend.dto.RefreshTokenResponse;
 import org.ib.ibbackend.entity.Invoice;
 import org.ib.ibbackend.entity.InvoiceItem;
 import org.ib.ibbackend.entity.Product;
@@ -10,19 +11,24 @@ import org.ib.ibbackend.entity.Tenant;
 import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.filter.TenantContext;
 import org.ib.ibbackend.repository.InvoiceRepository;
+import org.ib.ibbackend.repository.NonGstInvoiceRepository;
 import org.ib.ibbackend.repository.ProductRepository;
 import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.service.JwtService;
-import org.ib.ibbackend.service.LoginCryptoService;
 import org.ib.ibbackend.service.PasswordSecurityService;
 import org.ib.ibbackend.service.RefreshTokenService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
+import org.springframework.web.bind.annotation.PostMapping;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -31,6 +37,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -48,7 +56,16 @@ class FrontendContractContractTest {
 
         DashBoardAPI controller = new DashBoardAPI();
         ReflectionTestUtils.setField(controller, "productRepo", mock(ProductRepository.class));
-        ReflectionTestUtils.setField(controller, "invoiceRepo", mock(org.ib.ibbackend.repository.InvoiceRepository.class));
+        InvoiceRepository invoiceRepository = mock(InvoiceRepository.class);
+        NonGstInvoiceRepository nonGstInvoiceRepository = mock(NonGstInvoiceRepository.class);
+        ReflectionTestUtils.setField(controller, "invoiceRepo", invoiceRepository);
+        ReflectionTestUtils.setField(controller, "nonGstInvoiceRepo", nonGstInvoiceRepository);
+        when(invoiceRepository.getTodaySalesByTenantId(7L)).thenReturn(new BigDecimal("100.00"));
+        when(nonGstInvoiceRepository.getTodaySalesByTenantId(7L)).thenReturn(new BigDecimal("45.75"));
+        when(invoiceRepository.getPendingAmountByTenantId(7L)).thenReturn(new BigDecimal("20.00"));
+        when(nonGstInvoiceRepository.getPendingAmountByTenantId(7L)).thenReturn(new BigDecimal("15.25"));
+        when(invoiceRepository.countTodayInvoicesByTenantId(7L)).thenReturn(2L);
+        when(nonGstInvoiceRepository.countTodayInvoicesByTenantId(7L)).thenReturn(3L);
 
         ResponseEntity<Map<String, Object>> response = controller.getDashboardMetrics();
         Map<String, Object> body = response.getBody();
@@ -58,20 +75,57 @@ class FrontendContractContractTest {
         assertThat(body.get("pendingPayments")).isInstanceOf(Number.class);
         assertThat(body.get("lowStock")).isInstanceOf(Number.class);
         assertThat(body.get("ordersToday")).isInstanceOf(Number.class);
+        assertThat((BigDecimal) body.get("salesToday")).isEqualByComparingTo("145.75");
+        assertThat((BigDecimal) body.get("pendingPayments")).isEqualByComparingTo("35.25");
+        assertThat(body.get("ordersToday")).isEqualTo(5L);
 
         ResponseEntity<Map<String, Object>> summaryResponse = controller.getDashboardSummary();
         assertThat(summaryResponse.getBody()).containsKeys("salesToday", "pendingPayments", "lowStock", "ordersToday");
     }
 
     @Test
+    void dashboardStatsShouldIncludeNonGstInvoices() {
+        TenantContext.setCurrentTenant(7L);
+
+        DashBoardAPI controller = new DashBoardAPI();
+        ProductRepository productRepository = mock(ProductRepository.class);
+        InvoiceRepository invoiceRepository = mock(InvoiceRepository.class);
+        NonGstInvoiceRepository nonGstInvoiceRepository = mock(NonGstInvoiceRepository.class);
+        ReflectionTestUtils.setField(controller, "productRepo", productRepository);
+        ReflectionTestUtils.setField(controller, "invoiceRepo", invoiceRepository);
+        ReflectionTestUtils.setField(controller, "nonGstInvoiceRepo", nonGstInvoiceRepository);
+
+        when(productRepository.findAllWithExpiryByTenantId(7L)).thenReturn(List.of());
+        when(invoiceRepository.countByTenantId(7L)).thenReturn(2L);
+        when(nonGstInvoiceRepository.countByTenantId(7L)).thenReturn(3L);
+        when(invoiceRepository.getTotalRevenueByTenantId(7L)).thenReturn(new BigDecimal("100.00"));
+        when(nonGstInvoiceRepository.getTotalRevenueByTenantId(7L)).thenReturn(new BigDecimal("45.00"));
+        when(invoiceRepository.getTodaySalesByTenantId(7L)).thenReturn(new BigDecimal("20.00"));
+        when(nonGstInvoiceRepository.getTodaySalesByTenantId(7L)).thenReturn(new BigDecimal("10.00"));
+        when(invoiceRepository.getPendingAmountByTenantId(7L)).thenReturn(new BigDecimal("5.00"));
+        when(nonGstInvoiceRepository.getPendingAmountByTenantId(7L)).thenReturn(new BigDecimal("7.00"));
+        when(invoiceRepository.getPendingCountByTenantId(7L)).thenReturn(1L);
+        when(nonGstInvoiceRepository.getPendingCountByTenantId(7L)).thenReturn(2L);
+
+        Map<String, Object> stats = controller.getDashboardStats().getBody();
+
+        assertThat(stats).containsEntry("totalOrders", 5L);
+        assertThat((BigDecimal) stats.get("totalRevenue")).isEqualByComparingTo("145.00");
+        assertThat((BigDecimal) stats.get("salesToday")).isEqualByComparingTo("30.00");
+        assertThat((BigDecimal) stats.get("pendingAmount")).isEqualByComparingTo("12.00");
+        assertThat(stats).containsEntry("pendingCount", 3L);
+    }
+
+    @Test
     void loginPayloadShouldIncludeTenantAndBusinessMetadata() {
-        AuthController controller = new AuthController();
+        LoginController controller = new LoginController();
         UserRepository userRepo = mock(UserRepository.class);
         Argon2PasswordEncoder argon2 = Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
         JwtService jwtService = mock(JwtService.class);
         RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
 
-        ReflectionTestUtils.setField(controller, "userRepo", userRepo);
+        ReflectionTestUtils.setField(controller, "userRepository", userRepo);
+        ReflectionTestUtils.setField(controller, "tenantRepository", mock(org.ib.ibbackend.repository.TenantRepository.class));
         ReflectionTestUtils.setField(controller, "passwordSecurityService", new PasswordSecurityService(argon2));
         ReflectionTestUtils.setField(controller, "jwtService", jwtService);
         ReflectionTestUtils.setField(controller, "refreshTokenService", refreshTokenService);
@@ -98,8 +152,8 @@ class FrontendContractContractTest {
         request.setUsername("owner@example.com");
         request.setPassword("secret");
 
-        ResponseEntity<Map<String, Object>> response = controller.login(request);
-        Map<String, Object> userPayload = (Map<String, Object>) response.getBody().get("user");
+        ResponseEntity<LoginResponse> response = controller.login(request);
+        Map<String, Object> userPayload = (Map<String, Object>) response.getBody().getUser();
 
         assertThat(userPayload).containsEntry("tenantId", 7);
         assertThat(userPayload).containsEntry("businessName", "Demo Store");
@@ -200,73 +254,63 @@ class FrontendContractContractTest {
     void refreshTokenFailureShouldReturnUnauthorized() {
         AuthController controller = new AuthController();
         ReflectionTestUtils.setField(controller, "userRepo", mock(UserRepository.class));
-        ReflectionTestUtils.setField(controller, "passwordSecurityService", new PasswordSecurityService(Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8()));
         ReflectionTestUtils.setField(controller, "jwtService", mock(JwtService.class));
         ReflectionTestUtils.setField(controller, "refreshTokenService", mock(RefreshTokenService.class));
 
-        RefreshTokenRequest request = new RefreshTokenRequest();
-        request.setUsername("admin");
-        request.setRefreshToken("invalid-token");
-
-        when(((UserRepository) ReflectionTestUtils.getField(controller, "userRepo")).findByEmail("admin"))
-                .thenReturn(Optional.empty());
-
-        ResponseEntity<?> response = controller.refreshToken(request, null, null);
+        ResponseEntity<?> response = controller.refreshToken(null, null);
 
         assertThat(response.getStatusCode().value()).isEqualTo(401);
+        assertThat(response.getHeaders().getFirst("Cache-Control")).contains("no-store");
+        assertThat(response.getHeaders().getFirst("Set-Cookie"))
+                .contains("refreshToken=").contains("Path=/api/auth").contains("Max-Age=0");
     }
 
     @Test
-    void encryptedLoginShouldKeepFrontendContractPayload() {
+    void refreshTokenShouldRotateCookieAndReturnOnlyAccessToken() throws Exception {
         AuthController controller = new AuthController();
         UserRepository userRepo = mock(UserRepository.class);
-        Argon2PasswordEncoder argon2 = Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
         JwtService jwtService = mock(JwtService.class);
         RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
-        LoginCryptoService loginCryptoService = mock(LoginCryptoService.class);
-
         ReflectionTestUtils.setField(controller, "userRepo", userRepo);
-        ReflectionTestUtils.setField(controller, "passwordSecurityService", new PasswordSecurityService(argon2));
         ReflectionTestUtils.setField(controller, "jwtService", jwtService);
         ReflectionTestUtils.setField(controller, "refreshTokenService", refreshTokenService);
-        ReflectionTestUtils.setField(controller, "loginCryptoService", loginCryptoService);
-
-        Tenant tenant = new Tenant();
-        tenant.setId(9);
-        tenant.setName("Retail Tenant");
-        tenant.setCode("RET9");
 
         User user = new User();
-        user.setId(99L);
-        user.setOwnerName("Retail Owner");
-        user.setEmail("retail@example.com");
-        user.setBusinessName("Retail Tenant");
-        user.setPasswordHash(argon2.encode("secret"));
+        user.setId(19L);
+        user.setEmail("owner@example.com");
         user.setRole("STORE_ADMIN");
+        Tenant tenant = new Tenant();
+        tenant.setId(19);
         user.setTenant(tenant);
+        Claims claims = Jwts.claims();
+        claims.setSubject(user.getEmail());
+        when(jwtService.extractRefreshClaims("old-refresh-token")).thenReturn(claims);
+        when(userRepo.findByEmail(user.getEmail())).thenReturn(Optional.of(user));
+        when(jwtService.generateAccessToken(user)).thenReturn("new-access-token");
+        when(jwtService.generateRefreshToken(user)).thenReturn("candidate-refresh-token");
+        when(jwtService.getRefreshTokenExpiryMs()).thenReturn(604800000L);
+        when(refreshTokenService.rotateToken(eq(user), eq("old-refresh-token"), anyString()))
+                .thenReturn(Optional.of("rotated-refresh-token"));
 
-        when(userRepo.findByEmail("retail@example.com")).thenReturn(Optional.of(user));
-        when(jwtService.generateAccessToken(user)).thenReturn("access-token");
-        when(jwtService.generateRefreshToken(user)).thenReturn("refresh-token");
-
-        LoginRequest encryptedRequest = new LoginRequest();
-        encryptedRequest.setEncryptedPayload("payload");
-        encryptedRequest.setEncryptedKey("key");
-        encryptedRequest.setIv("iv");
-
-        LoginRequest decryptedRequest = new LoginRequest();
-        decryptedRequest.setUsername("retail@example.com");
-        decryptedRequest.setPassword("secret");
-
-        when(loginCryptoService.isEncryptedPayload(encryptedRequest)).thenReturn(true);
-        when(loginCryptoService.resolveLoginRequest(encryptedRequest)).thenReturn(decryptedRequest);
-
-        ResponseEntity<Map<String, Object>> response = controller.login(encryptedRequest);
-        Map<String, Object> userPayload = (Map<String, Object>) response.getBody().get("user");
+        ResponseEntity<?> response = controller.refreshToken("old-refresh-token", new MockHttpServletRequest());
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(userPayload).containsEntry("tenantId", 9);
-        assertThat(userPayload).containsEntry("businessName", "Retail Tenant");
-        assertThat(userPayload).containsEntry("email", "retail@example.com");
+        assertThat(((RefreshTokenResponse) response.getBody()).getAccessToken()).isEqualTo("new-access-token");
+        assertThat(new ObjectMapper().writeValueAsString(response.getBody()))
+                .doesNotContain("refreshToken", "rotated-refresh-token");
+        assertThat(response.getHeaders().getFirst("Cache-Control")).contains("no-store");
+        assertThat(response.getHeaders().get("Set-Cookie"))
+                .anySatisfy(cookie -> assertThat(cookie)
+                        .contains("rotated-refresh-token").contains("Path=/api/auth").contains("HttpOnly"));
+    }
+
+    @Test
+    void authLoginRouteUsesMfaAwareLoginController() throws NoSuchMethodException {
+        PostMapping mapping = LoginController.class
+                .getMethod("login", LoginRequest.class)
+                .getAnnotation(PostMapping.class);
+
+        assertThat(mapping).isNotNull();
+        assertThat(mapping.path()).contains("/api/auth/login");
     }
 }

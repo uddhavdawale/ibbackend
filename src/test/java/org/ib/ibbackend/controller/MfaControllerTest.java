@@ -100,7 +100,7 @@ class MfaControllerTest {
         Map<?, ?> authenticatedUser = (Map<?, ?>) response.getBody().get("user");
         assertThat(authenticatedUser.get("username")).isEqualTo("owner@example.com");
         assertThat(authenticatedUser.get("role")).isEqualTo("STORE_ADMIN");
-        assertThat(authenticatedUser).containsKey("tenantId");
+        assertThat(authenticatedUser.containsKey("tenantId")).isTrue();
         assertThat(authenticatedUser.get("tenantId")).isNull();
         assertThat(response.getBody()).doesNotContainKey("refreshToken");
         assertThat(response.getHeaders().get(HttpHeaders.SET_COOKIE))

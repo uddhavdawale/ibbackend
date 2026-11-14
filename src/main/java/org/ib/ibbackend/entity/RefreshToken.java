@@ -35,6 +35,15 @@ public class RefreshToken {
     @Column(name = "replaced_by_token_hash")
     private String replacedByTokenHash;
 
+    @Column(name = "family_id", nullable = false, length = 64)
+    private String familyId;
+
+    @Column(name = "replacement_token_ciphertext", columnDefinition = "TEXT")
+    private String replacementTokenCiphertext;
+
+    @Column(name = "replacement_grace_until")
+    private LocalDateTime replacementGraceUntil;
+
     public Long getId() {
         return id;
     }
@@ -97,5 +106,29 @@ public class RefreshToken {
 
     public void setReplacedByTokenHash(String replacedByTokenHash) {
         this.replacedByTokenHash = replacedByTokenHash;
+    }
+
+    public String getFamilyId() {
+        return familyId;
+    }
+
+    public void setFamilyId(String familyId) {
+        this.familyId = familyId;
+    }
+
+    public String getReplacementTokenCiphertext() {
+        return replacementTokenCiphertext;
+    }
+
+    public void setReplacementTokenCiphertext(String replacementTokenCiphertext) {
+        this.replacementTokenCiphertext = replacementTokenCiphertext;
+    }
+
+    public LocalDateTime getReplacementGraceUntil() {
+        return replacementGraceUntil;
+    }
+
+    public void setReplacementGraceUntil(LocalDateTime replacementGraceUntil) {
+        this.replacementGraceUntil = replacementGraceUntil;
     }
 }

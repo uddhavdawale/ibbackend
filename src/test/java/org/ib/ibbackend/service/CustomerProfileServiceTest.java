@@ -17,6 +17,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -66,6 +67,31 @@ class CustomerProfileServiceTest {
         assertEquals(0, new BigDecimal("300.00").compareTo(saved.getDueBalance()));
         assertEquals(110L, saved.getLastOrderId());
         assertEquals("INV-2026/0001", saved.getLastOrderNo());
+    }
+
+    @Test
+    void shouldNotUseShopOwnerEmailAsInvoiceCustomerEmail() {
+        CustomerProfileRepository customerProfileRepository = mock(CustomerProfileRepository.class);
+        InvoiceRepository invoiceRepository = mock(InvoiceRepository.class);
+        NonGstInvoiceRepository nonGstInvoiceRepository = mock(NonGstInvoiceRepository.class);
+        when(customerProfileRepository.save(any(CustomerProfile.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        CustomerProfileService service = new CustomerProfileService(
+                customerProfileRepository, invoiceRepository, nonGstInvoiceRepository);
+        Invoice invoice = new Invoice();
+        invoice.setCustomerName("Mina");
+        invoice.setCustomerEmail("shop-owner@example.com");
+        invoice.setGrandTotal(new BigDecimal("100.00"));
+        invoice.setPaidAmount(BigDecimal.ZERO);
+        Tenant tenant = new Tenant();
+        tenant.setId(7);
+        invoice.setTenant(tenant);
+
+        CustomerProfile saved = service.syncFromInvoice(invoice);
+
+        assertEquals("Mina", saved.getCustomerName());
+        assertNull(saved.getEmail());
     }
 
     @Test
@@ -191,5 +217,30 @@ class CustomerProfileServiceTest {
         assertEquals(lastOrderDate, mina.getLastInvoiceDate());
         verify(invoiceRepository).findCustomerRecordsByTenantId(7L);
         verify(nonGstInvoiceRepository).findCustomerRecordsByTenantId(7L);
+    }
+
+    @Test
+    void shouldKeepInvoiceCustomersDistinctWhenTheirInvoicesShareAnEmail() {
+        CustomerProfileRepository repository = mock(CustomerProfileRepository.class);
+        InvoiceRepository invoiceRepository = mock(InvoiceRepository.class);
+        NonGstInvoiceRepository nonGstInvoiceRepository = mock(NonGstInvoiceRepository.class);
+        when(repository.findByTenantIdOrderByUpdatedAtDesc(7L)).thenReturn(List.of());
+        when(invoiceRepository.findCustomerRecordsByTenantId(7L)).thenReturn(List.of(
+                new CustomerInvoiceRecord(10L, "INV-10", "Mina", null, "shop-owner@example.com",
+                        new BigDecimal("100.00"), BigDecimal.ZERO, LocalDate.of(2026, 11, 10)),
+                new CustomerInvoiceRecord(11L, "INV-11", "Asha", null, "shop-owner@example.com",
+                        new BigDecimal("50.00"), BigDecimal.ZERO, LocalDate.of(2026, 11, 11))
+        ));
+        when(nonGstInvoiceRepository.findCustomerRecordsByTenantId(7L)).thenReturn(List.of());
+
+        CustomerProfileService service = new CustomerProfileService(repository, invoiceRepository, nonGstInvoiceRepository);
+
+        List<CustomerProfile> customers = service.listByTenant(7L);
+
+        assertEquals(2, customers.size());
+        assertEquals(List.of("Asha", "Mina"), customers.stream()
+                .map(CustomerProfile::getCustomerName)
+                .sorted()
+                .toList());
     }
 }

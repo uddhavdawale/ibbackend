@@ -309,7 +309,6 @@ public class InvoiceController {
             if (email != null && !email.isBlank()) {
                 userRepository.findByEmail(email).ifPresent(user -> {
                     invoice.setUserId(user.getId());
-                    invoice.setCustomerEmail(user.getEmail());
                 });
             }
         }
@@ -424,7 +423,6 @@ public class InvoiceController {
                 User currentUser = userRepository.findByEmail(email).orElse(null);
                 if (currentUser != null) {
                     invoice.setUserId(currentUser.getId());
-                    invoice.setCustomerEmail(currentUser.getEmail());
                 }
             }
 

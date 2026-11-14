@@ -4,7 +4,6 @@ import java.util.Map;
 
 public class RefreshTokenResponse {
     private String userName;
-    private String refreshToken;
     private String accessToken;
     private boolean success;
     private String message;
@@ -46,14 +45,6 @@ public class RefreshTokenResponse {
         this.userName = userName;
     }
 
-    public String getRefreshToken() {
-        return refreshToken;
-    }
-
-    public void setRefreshToken(String refreshToken) {
-        this.refreshToken = refreshToken;
-    }
-
     public void setAccessToken(String accessToken) {
         this.accessToken = accessToken;
     }
@@ -69,5 +60,4 @@ public class RefreshTokenResponse {
     public RefreshTokenResponse() {
     }
 }
-
 

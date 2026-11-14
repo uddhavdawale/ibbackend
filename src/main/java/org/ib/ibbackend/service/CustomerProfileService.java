@@ -85,7 +85,6 @@ public class CustomerProfileService {
         request.setTenantId(tenantId);
         request.setCustomerName(invoice.getCustomerName());
         request.setPhone(invoice.getCustomerPhone());
-        request.setEmail(invoice.getCustomerEmail());
 
         CustomerProfile customer = createOrUpdateCustomer(request);
         BigDecimal previousBalance = customer.getDueBalance() == null ? BigDecimal.ZERO : customer.getDueBalance();
@@ -153,19 +152,17 @@ public class CustomerProfileService {
 
     private void addInvoiceCustomer(List<CustomerProfile> customers, Long tenantId, CustomerInvoiceRecord invoice) {
         String phone = normalizePhone(invoice.customerPhone());
-        String email = normalizeEmail(invoice.customerEmail());
         String name = normalizeCustomerName(invoice.customerName());
-        if ((phone == null || phone.isBlank()) && (email == null || email.isBlank()) && (name == null || name.isBlank())) {
+        if ((phone == null || phone.isBlank()) && (name == null || name.isBlank())) {
             return;
         }
 
-        CustomerProfile customer = findCustomerInList(customers, tenantId, phone, email, name);
+        CustomerProfile customer = findCustomerInList(customers, tenantId, phone, name);
         if (customer == null) {
             customer = new CustomerProfile();
             customer.setTenantId(tenantId);
             customer.setCustomerName(name);
             customer.setPhone(phone);
-            customer.setEmail(email);
             customers.add(customer);
         }
 
@@ -193,7 +190,6 @@ public class CustomerProfileService {
             List<CustomerProfile> customers,
             Long tenantId,
             String phone,
-            String email,
             String name
     ) {
         for (CustomerProfile customer : customers) {
@@ -201,14 +197,6 @@ public class CustomerProfileService {
                 continue;
             }
             if (phone != null && phone.equals(normalizePhone(customer.getPhone()))) {
-                return customer;
-            }
-        }
-        for (CustomerProfile customer : customers) {
-            if (customer.getTenantId() == null || !customer.getTenantId().equals(tenantId)) {
-                continue;
-            }
-            if (email != null && email.equals(normalizeEmail(customer.getEmail()))) {
                 return customer;
             }
         }

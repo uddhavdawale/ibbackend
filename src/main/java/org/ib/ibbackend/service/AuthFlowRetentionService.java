@@ -34,5 +34,26 @@ public class AuthFlowRetentionService {
                     LIMIT ?
                 )
                 """, CLEANUP_BATCH_SIZE);
+        jdbcTemplate.update("""
+                DELETE FROM refresh_tokens
+                WHERE id IN (
+                    SELECT id FROM refresh_tokens
+                    WHERE expires_at < CURRENT_TIMESTAMP - INTERVAL '1 day'
+                    ORDER BY expires_at
+                    LIMIT ?
+                )
+                """, CLEANUP_BATCH_SIZE);
+        jdbcTemplate.update("""
+                UPDATE refresh_tokens
+                SET replacement_token_ciphertext = NULL,
+                    replacement_grace_until = NULL
+                WHERE id IN (
+                    SELECT id FROM refresh_tokens
+                    WHERE replacement_token_ciphertext IS NOT NULL
+                      AND replacement_grace_until < CURRENT_TIMESTAMP
+                    ORDER BY replacement_grace_until
+                    LIMIT ?
+                )
+                """, CLEANUP_BATCH_SIZE);
     }
 }

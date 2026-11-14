@@ -6,6 +6,7 @@ import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.filter.TenantContext;
 import org.ib.ibbackend.repository.InvoiceItemRepository;
 import org.ib.ibbackend.repository.InvoiceRepository;
+import org.ib.ibbackend.repository.NonGstInvoiceRepository;
 import org.ib.ibbackend.repository.NonGstInvoiceItemRepository;
 import org.ib.ibbackend.repository.ProductRepository;
 import org.ib.ibbackend.repository.UserRepository;
@@ -47,6 +48,8 @@ public class DashBoardAPI {
     @Autowired
     private InvoiceRepository invoiceRepo;
     @Autowired
+    private NonGstInvoiceRepository nonGstInvoiceRepo;
+    @Autowired
     private UserRepository userRepository;
     @Autowired(required = false)
     private InvoiceItemRepository invoiceItemRepo;
@@ -76,10 +79,18 @@ public class DashBoardAPI {
         log.info("Fetching dashboard metrics for tenant={}", tenantId);
         Map<String, Object> metrics = new HashMap<>();
 
-        BigDecimal salesToday = invoiceRepo.getTodaySalesByTenantId(tenantId);
-        BigDecimal pendingPayments = invoiceRepo.getPendingAmountByTenantId(tenantId);
+        BigDecimal salesToday = sumAmounts(
+                invoiceRepo.getTodaySalesByTenantId(tenantId),
+                nonGstInvoiceRepo.getTodaySalesByTenantId(tenantId)
+        );
+        BigDecimal pendingPayments = sumAmounts(
+                invoiceRepo.getPendingAmountByTenantId(tenantId),
+                nonGstInvoiceRepo.getPendingAmountByTenantId(tenantId)
+        );
         long lowStock = productRepo.countLowStockItemsByTenantId(tenantId);
-        long ordersToday = invoiceRepo.countTodayInvoicesByTenantId(tenantId);        metrics.put("salesToday", salesToday != null ? salesToday.setScale(2, java.math.RoundingMode.HALF_UP) : BigDecimal.ZERO.setScale(2, java.math.RoundingMode.HALF_UP));
+        long ordersToday = invoiceRepo.countTodayInvoicesByTenantId(tenantId)
+                + nonGstInvoiceRepo.countTodayInvoicesByTenantId(tenantId);
+        metrics.put("salesToday", salesToday.setScale(2, java.math.RoundingMode.HALF_UP));
         metrics.put("pendingPayments", pendingPayments != null ? pendingPayments.setScale(2, java.math.RoundingMode.HALF_UP) : BigDecimal.ZERO.setScale(2, java.math.RoundingMode.HALF_UP));
         metrics.put("lowStock", lowStock);
         metrics.put("ordersToday", ordersToday);
@@ -107,12 +118,23 @@ public class DashBoardAPI {
 
         try {
             stats.put("totalProducts", productRepo.countByTenantId(tenantId));
-            stats.put("totalOrders", invoiceRepo.countByTenantId(tenantId));
+            stats.put("totalOrders", invoiceRepo.countByTenantId(tenantId)
+                    + nonGstInvoiceRepo.countByTenantId(tenantId));
             stats.put("lowStockItems", productRepo.countLowStockItemsByTenantId(tenantId));
-            stats.put("totalRevenue", invoiceRepo.getTotalRevenueByTenantId(tenantId));
-            stats.put("salesToday", invoiceRepo.getTodaySalesByTenantId(tenantId));
-            stats.put("pendingAmount", invoiceRepo.getPendingAmountByTenantId(tenantId));
-            stats.put("pendingCount", invoiceRepo.getPendingCountByTenantId(tenantId));
+            stats.put("totalRevenue", sumAmounts(
+                    invoiceRepo.getTotalRevenueByTenantId(tenantId),
+                    nonGstInvoiceRepo.getTotalRevenueByTenantId(tenantId)
+            ));
+            stats.put("salesToday", sumAmounts(
+                    invoiceRepo.getTodaySalesByTenantId(tenantId),
+                    nonGstInvoiceRepo.getTodaySalesByTenantId(tenantId)
+            ));
+            stats.put("pendingAmount", sumAmounts(
+                    invoiceRepo.getPendingAmountByTenantId(tenantId),
+                    nonGstInvoiceRepo.getPendingAmountByTenantId(tenantId)
+            ));
+            stats.put("pendingCount", invoiceRepo.getPendingCountByTenantId(tenantId)
+                    + nonGstInvoiceRepo.getPendingCountByTenantId(tenantId));
             stats.put("topSoldProducts", getTopSoldProducts(tenantId, TOP_PRODUCTS_LIMIT));
 
             List<Product> productsWithExpiry = productRepo.findAllWithExpiryByTenantId(tenantId);
@@ -173,6 +195,16 @@ public class DashBoardAPI {
                 .header(HttpHeaders.PRAGMA, "no-cache")
                 .header(HttpHeaders.EXPIRES, "0")
                 .body(body);
+    }
+
+    private BigDecimal sumAmounts(BigDecimal... amounts) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (BigDecimal amount : amounts) {
+            if (amount != null) {
+                total = total.add(amount);
+            }
+        }
+        return total;
     }
 
     private List<Map<String, Object>> getTopSoldProducts(Long tenantId, int limit) {

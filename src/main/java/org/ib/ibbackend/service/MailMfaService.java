@@ -75,13 +75,7 @@ public class MailMfaService {
     }
 
     public void sendPasswordReset(String email, String token) {
-        String baseUrl = authFlowProperties.getFrontendBaseUrl();
-        if (baseUrl == null || baseUrl.isBlank()) {
-            throw new IllegalStateException("Password reset frontend URL is not configured");
-        }
-        String resetUrl = baseUrl.replaceAll("/+$", "")
-                + "/login#resetToken="
-                + URLEncoder.encode(token, StandardCharsets.UTF_8);
+        String resetUrl = buildPasswordResetUrl(token);
         enqueue("password reset", () -> sendMessage(
                 email,
                 "Password reset instructions",
@@ -89,6 +83,16 @@ public class MailMfaService {
                         + authFlowProperties.getPasswordResetExpiryMinutes() + " minutes:\n\n"
                         + resetUrl
         ));
+    }
+
+    String buildPasswordResetUrl(String token) {
+        String baseUrl = authFlowProperties.getFrontendBaseUrl();
+        if (baseUrl == null || baseUrl.isBlank()) {
+            throw new IllegalStateException("Password reset frontend URL is not configured");
+        }
+        return baseUrl.replaceAll("/+$", "")
+                + "/reset-password#resetToken="
+                + URLEncoder.encode(token, StandardCharsets.UTF_8);
     }
 
     public void sendPasswordChangedNotification(String email) {

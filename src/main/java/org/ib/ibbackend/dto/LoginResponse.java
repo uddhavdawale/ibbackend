@@ -11,17 +11,8 @@ public class LoginResponse {
     private String username;
     private String role;
     private String email;
-    private String refreshToken;
     private Object user;
     private boolean requiresMfa;
-
-    public String getRefreshToken() {
-        return refreshToken;
-    }
-
-    public void setRefreshToken(String refreshToken) {
-        this.refreshToken = refreshToken;
-    }
 
     public LoginResponse(boolean success, String message) {
         this.success = success;

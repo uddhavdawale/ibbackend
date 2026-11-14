@@ -17,6 +17,7 @@ import org.ib.ibbackend.service.LoginCryptoService;
 import org.ib.ibbackend.service.MailMfaService;
 import org.ib.ibbackend.service.PasswordSecurityService;
 import org.ib.ibbackend.service.RefreshTokenService;
+import org.ib.ibbackend.service.AuthCookieService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -52,6 +53,9 @@ public class LoginController {
     private RefreshTokenService refreshTokenService;
 
     @Autowired
+    private AuthCookieService authCookieService = AuthCookieService.defaultFactory();
+
+    @Autowired
     private MailMfaService mailMfaService;
 
     @Autowired(required = false)
@@ -83,7 +87,7 @@ public class LoginController {
         }
     }
 
-    @PostMapping(path = {"/api/login", "/login"})
+    @PostMapping(path = {"/api/login", "/login", "/api/auth/login"})
     public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) {
         LoginRequest normalizedRequest;
         try {
@@ -181,13 +185,8 @@ public class LoginController {
         String refreshToken = jwtService.generateRefreshToken(user);
         refreshTokenService.storeToken(user, refreshToken);
 
-        ResponseCookie refreshCookie = ResponseCookie.from("refreshToken", refreshToken)
-                .httpOnly(true)
-                .secure(true)
-                .sameSite("None")
-                .path("/")
-                .maxAge(Duration.ofDays(7))
-                .build();
+        ResponseCookie refreshCookie = authCookieService.refreshCookie(
+                refreshToken, jwtService.getRefreshTokenExpiryMs());
 
         Map<String, Object> userPayload = new HashMap<>();
         String loginUsername = resolveLoginUsername(user);
@@ -202,7 +201,6 @@ public class LoginController {
         LoginResponse response = new LoginResponse(true, "Login successful");
         response.setToken(accessToken);
         response.setAccessToken(accessToken);
-        response.setRefreshToken(refreshToken);
         response.setTokenType("Bearer");
         response.setUsername(loginUsername);
         response.setRole(user.getRole());
@@ -212,7 +210,9 @@ public class LoginController {
         auditSuccess("LOGIN", String.valueOf(user.getId()), "Login successful");
 
         return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.SET_COOKIE, refreshCookie.toString())
+                .header(HttpHeaders.SET_COOKIE, authCookieService.clearLegacyRefreshCookie().toString())
                 .body(response);
     }
 

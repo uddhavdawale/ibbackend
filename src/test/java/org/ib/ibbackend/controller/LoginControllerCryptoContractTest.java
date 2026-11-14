@@ -10,6 +10,7 @@ import org.ib.ibbackend.service.JwtService;
 import org.ib.ibbackend.service.LoginCryptoService;
 import org.ib.ibbackend.service.PasswordSecurityService;
 import org.ib.ibbackend.service.RefreshTokenService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
@@ -24,7 +25,7 @@ import static org.mockito.Mockito.when;
 class LoginControllerCryptoContractTest {
 
     @Test
-    void encryptedLoginShouldSucceedWhenEncryptedOnlyIsEnabled() {
+    void encryptedLoginShouldSucceedWhenEncryptedOnlyIsEnabled() throws Exception {
         LoginController controller = new LoginController();
         UserRepository userRepo = mock(UserRepository.class);
         JwtService jwtService = mock(JwtService.class);
@@ -74,6 +75,13 @@ class LoginControllerCryptoContractTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().isSuccess()).isTrue();
         assertThat(response.getBody().getAccessToken()).isEqualTo("access-token");
+        assertThat(response.getHeaders().getFirst("Cache-Control")).contains("no-store");
+        assertThat(response.getHeaders().get("Set-Cookie"))
+                .anySatisfy(cookie -> assertThat(cookie)
+                        .contains("HttpOnly").contains("Secure").contains("SameSite=None")
+                        .contains("Path=/api/auth"));
+        assertThat(new ObjectMapper().writeValueAsString(response.getBody()))
+                .doesNotContain("refreshToken", "refresh-token");
     }
 
     @Test
@@ -144,4 +152,3 @@ class LoginControllerCryptoContractTest {
         assertThat(response.getBody().isSuccess()).isTrue();
     }
 }
-

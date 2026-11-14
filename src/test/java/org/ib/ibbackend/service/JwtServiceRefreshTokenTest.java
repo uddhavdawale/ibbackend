@@ -31,8 +31,22 @@ class JwtServiceRefreshTokenTest {
         assertThat(jwtService.extractUsername(accessToken)).isEqualTo("demo@example.com");
         assertThat(jwtService.isAccessTokenValid(accessToken, user)).isTrue();
         assertThat(jwtService.isRefreshTokenValid(refreshToken, user)).isTrue();
+        assertThat(jwtService.generateRefreshToken(user)).isNotEqualTo(refreshToken);
         assertThat(jwtService.getTenantId(accessToken)).isEqualTo(7L);
         assertThat(jwtService.getRefreshTenantId(refreshToken)).isEqualTo(7L);
+    }
+
+    @Test
+    void shouldEncryptRefreshTokenReplayCacheWithAuthenticatedEncryption() {
+        JwtService jwtService = new JwtService();
+        User user = new User();
+        user.setEmail("demo@example.com");
+        String refreshToken = jwtService.generateRefreshToken(user);
+
+        String encrypted = jwtService.encryptRefreshTokenForReplay(refreshToken);
+
+        assertThat(encrypted).isNotEqualTo(refreshToken);
+        assertThat(jwtService.decryptRefreshTokenForReplay(encrypted)).isEqualTo(refreshToken);
     }
 
     @Test

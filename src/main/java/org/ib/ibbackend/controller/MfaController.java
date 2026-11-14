@@ -14,6 +14,7 @@ import org.ib.ibbackend.service.FirebaseTokenVerifierService;
 import org.ib.ibbackend.service.JwtService;
 import org.ib.ibbackend.service.MailMfaService;
 import org.ib.ibbackend.service.RefreshTokenService;
+import org.ib.ibbackend.service.AuthCookieService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,6 +52,9 @@ public class MfaController {
 
     @Autowired
     private RefreshTokenService refreshTokenService;
+
+    @Autowired
+    private AuthCookieService authCookieService = AuthCookieService.defaultFactory();
 
     @Autowired(required = false)
     private FirebaseTokenVerifierService firebaseTokenVerifierService;
@@ -252,13 +256,8 @@ public class MfaController {
         String refreshToken = jwtService.generateRefreshToken(user);
         refreshTokenService.storeToken(user, refreshToken);
 
-        ResponseCookie refreshCookie = ResponseCookie.from("refreshToken", refreshToken)
-                .httpOnly(true)
-                .secure(true)
-                .sameSite("None")
-                .path("/")
-                .maxAge(Duration.ofDays(7))
-                .build();
+        ResponseCookie refreshCookie = authCookieService.refreshCookie(
+                refreshToken, jwtService.getRefreshTokenExpiryMs());
 
         Map<String, Object> userPayload = new HashMap<>();
         String loginUsername = resolveLoginUsername(user);
@@ -284,6 +283,7 @@ public class MfaController {
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.SET_COOKIE, refreshCookie.toString())
+                .header(HttpHeaders.SET_COOKIE, authCookieService.clearLegacyRefreshCookie().toString())
                 .header(HttpHeaders.SET_COOKIE, clearPreAuthCookie().toString())
                 .body(response);
     }

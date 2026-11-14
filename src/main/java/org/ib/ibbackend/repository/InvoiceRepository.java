@@ -46,17 +46,20 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     long countTodayInvoicesByTenantId(@Param("tenantId") Long tenantId);
 
     // Pending invoices count
-    @Query("SELECT COUNT(i) FROM Invoice i WHERE i.status != 'PAID'")
+    @Query("SELECT COUNT(i) FROM Invoice i WHERE i.status <> 'CANCELLED' AND i.grandTotal > i.paidAmount")
     long getPendingInvoicesCount();
 
     // Pending amount
-    @Query("SELECT COALESCE(SUM(i.grandTotal), 0) FROM Invoice i WHERE i.status != 'PAID'")
+    @Query("SELECT COALESCE(SUM(CASE WHEN i.grandTotal > i.paidAmount THEN i.grandTotal - i.paidAmount ELSE 0 END), 0) " +
+            "FROM Invoice i WHERE i.status <> 'CANCELLED'")
     BigDecimal getPendingAmount();
 
-    @Query("SELECT COALESCE(SUM(i.grandTotal), 0) FROM Invoice i WHERE i.tenant.id = :tenantId AND i.status != 'PAID'")
+    @Query("SELECT COALESCE(SUM(CASE WHEN i.grandTotal > i.paidAmount THEN i.grandTotal - i.paidAmount ELSE 0 END), 0) " +
+            "FROM Invoice i WHERE i.tenant.id = :tenantId AND i.status <> 'CANCELLED'")
     BigDecimal getPendingAmountByTenantId(@Param("tenantId") Long tenantId);
 
-    @Query("SELECT COUNT(i) FROM Invoice i WHERE i.tenant.id = :tenantId AND i.status != 'PAID'")
+    @Query("SELECT COUNT(i) FROM Invoice i WHERE i.tenant.id = :tenantId " +
+            "AND i.status <> 'CANCELLED' AND i.grandTotal > i.paidAmount")
     long getPendingCountByTenantId(@Param("tenantId") Long tenantId);
 
     @Query("SELECT COUNT(i) FROM Invoice i WHERE i.tenant.id = :tenantId")

@@ -112,6 +112,15 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 log.warn("Authorization header was present but not in Bearer format for request {}", req.getRequestURI());
                 auditFailure("ACCESS_DENIED_EVENT", req.getRequestURI(), "Authorization header is not Bearer format");
             }
+        } catch (ExpiredJwtException e) {
+            log.debug("Expired bearer token for request {}", req.getRequestURI());
+            auditFailure("ACCESS_DENIED_EVENT", req.getRequestURI(), "Expired bearer token");
+            SecurityContextHolder.clearContext();
+            TenantContext.clear();
+            res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            res.setContentType("application/json");
+            res.getWriter().write("{\"message\":\"Invalid or expired token\"}");
+            return;
         } catch (Exception e) {
             log.warn("Invalid or expired bearer token for request {}", req.getRequestURI(), e);
             auditFailure("ACCESS_DENIED_EVENT", req.getRequestURI(), "Invalid or expired bearer token");
