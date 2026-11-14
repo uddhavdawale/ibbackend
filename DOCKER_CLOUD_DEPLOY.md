@@ -1,5 +1,41 @@
 # Docker and Cloud Deployment
 
+## Deploy to Railway
+
+The Railway configuration builds the existing `Dockerfile` and activates the
+Spring `railway` profile. Add a PostgreSQL service to the Railway project, then
+reference its `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD`
+variables in the backend service (use Railway variable references if the
+database is a separate service). The profile assembles the JDBC URL from these
+values.
+
+Set these backend service variables in Railway:
+
+- `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET`: independent, randomly generated
+  secrets of at least 32 bytes.
+- `APP_CORS_ALLOWED_ORIGINS`: comma-separated frontend origins, without paths or
+  trailing slashes.
+- `APP_FRONTEND_BASE_URL`: the deployed frontend URL.
+- `TENANT_DOCUMENT_ENCRYPTION_KEY`: a stable, backed-up base64-encoded 32-byte
+  key if tenant document encryption is used.
+- `APP_BOOTSTRAP_DEMO_USER_EMAIL` and `APP_BOOTSTRAP_DEMO_USER_PASSWORD`.
+- `APP_BOOTSTRAP_SYSTEM_ADMIN_ONE_EMAIL` and
+  `APP_BOOTSTRAP_SYSTEM_ADMIN_ONE_PASSWORD`.
+- `APP_BOOTSTRAP_SYSTEM_ADMIN_TWO_EMAIL` and
+  `APP_BOOTSTRAP_SYSTEM_ADMIN_TWO_PASSWORD`.
+
+Set any mail, Firebase, or login-encryption variables required by the features
+you enable. Keep credentials and key values in Railway's variable manager, not
+in source control. The Railway profile enables bootstrap-account provisioning
+by default and requires all six bootstrap variables above. After verifying the
+accounts were created, set `APP_BOOTSTRAP_ENABLED=false` in Railway to disable
+provisioning on later deployments.
+
+Local development continues to use `application.properties` and the local
+PostgreSQL default (`localhost:5432/inventory_billing`). To use another local
+database, set `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and
+`SPRING_DATASOURCE_PASSWORD`.
+
 ## Build local image
 ```powershell
 docker build -t ibbackend:1.0.0 .
