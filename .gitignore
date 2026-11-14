@@ -33,3 +33,8 @@ build/
 .vscode/
 
 logs/
+
+/priv_tmp.pem
+/src/main/resources/private_key.pem
+/src/main/resources/firebase-service-account.json
+/src/main/resources/*firebase-adminsdk*.json

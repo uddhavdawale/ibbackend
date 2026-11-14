@@ -12,10 +12,12 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class JwtAuthFilterTest {
@@ -92,5 +94,67 @@ class JwtAuthFilterTest {
 
         assertThat(response.getStatus()).isEqualTo(401);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
+    void shouldAllowMfaRequestsToProceedWithExpiredAccessToken() throws Exception {
+        JwtService jwtService = new JwtService("a".repeat(64), "b".repeat(64), 1L, 1000L);
+        User user = new User();
+        user.setEmail("retailer@example.com");
+        user.setRole("retailer");
+        String expiredToken = createExpiredAccessToken(jwtService, user);
+        UserRepository userRepository = mock(UserRepository.class);
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRequestURI("/api/mfa/verify");
+        request.setServletPath("/api/mfa/verify");
+        request.addHeader("Authorization", "Bearer " + expiredToken);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicBoolean chainInvoked = new AtomicBoolean(false);
+        FilterChain chain = (req, res) -> chainInvoked.set(true);
+
+        JwtAuthFilter filter = new JwtAuthFilter();
+        ReflectionTestUtils.setField(filter, "jwtService", jwtService);
+        ReflectionTestUtils.setField(filter, "userRepository", userRepository);
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(chainInvoked).isTrue();
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        verifyNoInteractions(userRepository);
+    }
+
+    @Test
+    void shouldContinueRejectingExpiredAccessTokensOnProtectedEndpoints() throws Exception {
+        JwtService jwtService = new JwtService("a".repeat(64), "b".repeat(64), 1L, 1000L);
+        User user = new User();
+        user.setEmail("retailer@example.com");
+        user.setRole("retailer");
+        String expiredToken = createExpiredAccessToken(jwtService, user);
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRequestURI("/api/products");
+        request.setServletPath("/api/products");
+        request.addHeader("Authorization", "Bearer " + expiredToken);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = (req, res) -> {
+            throw new AssertionError("Filter should reject expired tokens on protected endpoints");
+        };
+
+        JwtAuthFilter filter = new JwtAuthFilter();
+        ReflectionTestUtils.setField(filter, "jwtService", jwtService);
+        ReflectionTestUtils.setField(filter, "userRepository", mock(UserRepository.class));
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    private String createExpiredAccessToken(JwtService jwtService, User user) throws InterruptedException {
+        String token = jwtService.generateAccessToken(user);
+        Thread.sleep(50L);
+        return token;
     }
 }

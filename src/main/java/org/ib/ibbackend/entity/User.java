@@ -77,6 +77,9 @@ public class User {
     @Column(name = "email_verified")
     private boolean emailVerified = false;
 
+    @Column(name = "auth_version", nullable = false)
+    private long authVersion;
+
     @ManyToOne
     @JoinColumn(name = "tenant_id")
     private Tenant tenant;
@@ -93,6 +96,8 @@ public class User {
 
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
+    public long getAuthVersion() { return authVersion; }
+    public void setAuthVersion(long authVersion) { this.authVersion = authVersion; }
 
     public String getPasswordHash() { return passwordHash; }
     public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }

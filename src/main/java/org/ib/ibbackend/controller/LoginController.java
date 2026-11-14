@@ -3,12 +3,14 @@ package org.ib.ibbackend.controller;
 import org.ib.ibbackend.dto.LoginModel;
 import org.ib.ibbackend.dto.LoginRequest;
 import org.ib.ibbackend.dto.LoginResponse;
+import org.ib.ibbackend.dto.MfaLoginChallengeResponse;
 import org.ib.ibbackend.entity.Tenant;
 import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.repository.TenantRepository;
 import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.security.UserRolePolicy;
 import org.ib.ibbackend.service.AuditLogService;
+import org.ib.ibbackend.service.AuthChallengeService;
 import org.ib.ibbackend.service.FirebaseTokenVerifierService;
 import org.ib.ibbackend.service.JwtService;
 import org.ib.ibbackend.service.LoginCryptoService;
@@ -18,6 +20,7 @@ import org.ib.ibbackend.service.RefreshTokenService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
@@ -32,7 +35,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @RestController()
-@CrossOrigin(originPatterns = "*", allowCredentials = "true")
 public class LoginController {
     @Autowired
     private UserRepository userRepository;
@@ -51,6 +53,9 @@ public class LoginController {
 
     @Autowired
     private MailMfaService mailMfaService;
+
+    @Autowired(required = false)
+    private AuthChallengeService authChallengeService;
 
     @Autowired(required = false)
     private FirebaseTokenVerifierService firebaseTokenVerifierService;
@@ -117,6 +122,7 @@ public class LoginController {
 
         if (firebaseMfaEnabled || mailMfaEnabled) {
             if (firebaseMfaEnabled) {
+                log.info("Firebase MFA challenge issued");
                 auditSuccess("MFA_CHALLENGE", String.valueOf(user.getId()), "Firebase MFA challenge required");
                 LoginResponse response = new LoginResponse(false, "MFA verification required");
                 String loginUsername = resolveLoginUsername(user);
@@ -135,31 +141,40 @@ public class LoginController {
                 return ResponseEntity.ok(response);
             }
 
-            try {
-                mailMfaService.issueOtp(user.getEmail());
-                auditSuccess("MFA_CHALLENGE", String.valueOf(user.getId()), "Mail OTP challenge issued");
-            } catch (RuntimeException ex) {
-                ex.printStackTrace();
-                auditFailure("MFA_CHALLENGE", String.valueOf(user.getId()), "MFA email could not be sent");
+            if (!mailMfaService.isReady()) {
+                log.warn("MFA challenge unavailable: mail delivery is not configured");
+                auditFailure("MFA_CHALLENGE", String.valueOf(user.getId()), "Mail delivery is not configured");
                 return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                        .body(new LoginResponse(false, "MFA email could not be sent. Check SMTP configuration."));
+                        .body(new LoginResponse(false, "MFA verification is temporarily unavailable."));
             }
 
-            LoginResponse response = new LoginResponse(false, "MFA verification required");
-                String loginUsername = resolveLoginUsername(user);
-            response.setRequiresMfa(true);
-                response.setUsername(loginUsername);
-            response.setRole(user.getRole());
-            response.setEmail(user.getEmail());
-            response.setUser(Map.of(
-                    "id", user.getId(),
-                    "username", loginUsername,
-                    "name", user.getOwnerName(),
-                    "email", user.getEmail(),
-                    "role", user.getRole(),
-                    "mfaProvider", "MAIL"
-            ));
-            return ResponseEntity.ok(response);
+            try {
+                AuthChallengeService.IssuedChallenge challenge = authChallengeService.createChallenge(user);
+                Duration cookieLifetime = Duration.between(
+                        java.time.LocalDateTime.now(java.time.ZoneOffset.UTC), challenge.expiresAt());
+                ResponseCookie preAuthCookie = ResponseCookie.from("mfaPreAuth", challenge.cookieValue())
+                        .httpOnly(true)
+                        .secure(true)
+                        .sameSite("None")
+                        .path("/api/mfa")
+                        .maxAge(cookieLifetime.isNegative() ? Duration.ZERO : cookieLifetime)
+                        .build();
+                log.info("Email MFA challenge issued");
+                auditSuccess("MFA_CHALLENGE", String.valueOf(user.getId()), "Mail MFA challenge issued");
+                return ResponseEntity.status(HttpStatus.ACCEPTED)
+                        .cacheControl(CacheControl.noStore())
+                        .header(HttpHeaders.SET_COOKIE, preAuthCookie.toString())
+                        .body(new MfaLoginChallengeResponse(Map.of(
+                                "challengeId", challenge.challengeId(),
+                                "maskedDestination", challenge.maskedDestination(),
+                                "expiresAt", challenge.expiresAt().atOffset(java.time.ZoneOffset.UTC).toInstant().toString()
+                        )));
+            } catch (IllegalArgumentException | IllegalStateException ex) {
+                log.warn("Email MFA challenge could not be created");
+                auditFailure("MFA_CHALLENGE", String.valueOf(user.getId()), "MFA challenge could not be created");
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                        .body(new LoginResponse(false, "MFA verification is temporarily unavailable."));
+            }
         }
 
         String accessToken = jwtService.generateAccessToken(user);
@@ -169,7 +184,7 @@ public class LoginController {
         ResponseCookie refreshCookie = ResponseCookie.from("refreshToken", refreshToken)
                 .httpOnly(true)
                 .secure(true)
-                .sameSite("Lax")
+                .sameSite("None")
                 .path("/")
                 .maxAge(Duration.ofDays(7))
                 .build();
@@ -246,7 +261,7 @@ public class LoginController {
         if (user == null) {
             return Optional.empty();
         }
-        if (user.getTenant() == null) {
+        if (user.getTenant() == null && !UserRolePolicy.isSystemAdmin(user.getRole())) {
             user.setTenant(createUniqueTenantForUser(user.getBusinessName(), user.getEmail()));
             userRepository.save(user);
         }

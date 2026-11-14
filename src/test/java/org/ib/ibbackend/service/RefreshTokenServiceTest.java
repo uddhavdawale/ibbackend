@@ -12,6 +12,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class RefreshTokenServiceTest {
@@ -82,20 +83,8 @@ class RefreshTokenServiceTest {
         user.setId(3L);
         user.setEmail("owner@example.com");
 
-        org.ib.ibbackend.entity.RefreshToken first = new org.ib.ibbackend.entity.RefreshToken();
-        first.setUser(user);
-        first.setRevoked(false);
-
-        org.ib.ibbackend.entity.RefreshToken second = new org.ib.ibbackend.entity.RefreshToken();
-        second.setUser(user);
-        second.setRevoked(false);
-
-        when(refreshTokenRepository.findByUserIdAndRevokedFalse(user.getId()))
-                .thenReturn(java.util.List.of(first, second));
-
         refreshTokenService.revokeAllActiveTokensForUser(user);
 
-        assertThat(first.isRevoked()).isTrue();
-        assertThat(second.isRevoked()).isTrue();
+        verify(refreshTokenRepository).revokeAllActiveForUser(any(), any());
     }
 }

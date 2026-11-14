@@ -5,6 +5,8 @@ import org.ib.ibbackend.entity.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -24,6 +26,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     @Query("select u from User u where lower(trim(u.email)) = lower(trim(:email)) and u.deletedAt is null")
     Optional<User> findByEmail(@Param("email") String email);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where lower(trim(u.email)) = lower(trim(:email)) and u.deletedAt is null")
+    Optional<User> findByEmailForUpdate(@Param("email") String email);
 
     @Query("select (count(u) > 0) from User u where lower(trim(u.email)) = lower(trim(:email)) and u.deletedAt is null")
     boolean existsByEmail(@Param("email") String email);

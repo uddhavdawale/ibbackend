@@ -54,4 +54,23 @@ class JwtServiceRefreshTokenTest {
 
         assertThat(expiryDelta).isGreaterThanOrEqualTo(30L * 60L * 1000L);
     }
+
+    @Test
+    void incrementingAuthVersionInvalidatesIssuedAccessAndRefreshTokens() {
+        JwtService jwtService = new JwtService(
+                "dev-access-secret-change-me-please-32-plus-bytes-64-chars-long-123456",
+                "dev-refresh-secret-change-me-please-32-plus-bytes-64-chars-long-654321",
+                30L * 60L * 1000L,
+                7L * 24L * 60L * 60L * 1000L
+        );
+        User user = new User();
+        user.setEmail("demo@example.com");
+
+        String accessToken = jwtService.generateAccessToken(user);
+        String refreshToken = jwtService.generateRefreshToken(user);
+        user.setAuthVersion(1);
+
+        assertThat(jwtService.isAccessTokenValid(accessToken, user)).isFalse();
+        assertThat(jwtService.isRefreshTokenValid(refreshToken, user)).isFalse();
+    }
 }

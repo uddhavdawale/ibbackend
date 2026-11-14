@@ -10,17 +10,19 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.regex.Pattern;
 import java.util.UUID;
 
 @Component("auditRequestContextFilter")
 public class RequestContextFilter extends OncePerRequestFilter {
+    private static final Pattern SAFE_REQUEST_ID = Pattern.compile("[A-Za-z0-9._-]{1,64}");
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         String requestId = request.getHeader("X-Request-Id");
-        if (requestId == null || requestId.isBlank()) {
+        if (requestId == null || !SAFE_REQUEST_ID.matcher(requestId).matches()) {
             requestId = UUID.randomUUID().toString();
         }
 

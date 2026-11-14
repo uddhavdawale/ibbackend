@@ -1,5 +1,6 @@
 package org.ib.ibbackend.filter;
 
+import io.jsonwebtoken.ExpiredJwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -60,13 +61,28 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
             if (StringUtils.hasText(authHeader) && authHeader.startsWith("Bearer ")) {
                 String token = authHeader.substring(7).trim();
-                String username = jwtService.extractUsername(token);
-                Long tenantId = jwtService.getTenantId(token);
+                String username;
+                Long tenantId;
+                try {
+                    username = jwtService.extractUsername(token);
+                    tenantId = jwtService.getTenantId(token);
+                } catch (ExpiredJwtException e) {
+                    if (!isMfaEndpoint(req)) {
+                        throw e;
+                    }
+                    log.debug("Ignoring expired bearer token on MFA endpoint {}", req.getRequestURI());
+                    SecurityContextHolder.clearContext();
+                    TenantContext.clear();
+                    username = null;
+                    tenantId = null;
+                }
 
                 if (StringUtils.hasText(username)) {
-                    User user = userRepository.findByEmail(username)
-                            .or(() -> userRepository.findByUsername(username))
-                            .orElse(null);
+                    var userByEmail = userRepository.findByEmail(username);
+                    if (userByEmail.isEmpty()) {
+                        userByEmail = userRepository.findByUsername(username);
+                    }
+                    User user = userByEmail.orElse(null);
                     if (user == null || !jwtService.isAccessTokenValid(token, user)) {
                         throw new SecurityException("Access token is invalid for user");
                     }
@@ -114,5 +130,17 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 TenantContext.clear();
             }
         }
+    }
+
+    private boolean isMfaEndpoint(HttpServletRequest request) {
+        String path = request.getServletPath();
+        if (!StringUtils.hasText(path)) {
+            path = request.getRequestURI();
+            String contextPath = request.getContextPath();
+            if (StringUtils.hasText(contextPath) && path.startsWith(contextPath)) {
+                path = path.substring(contextPath.length());
+            }
+        }
+        return "/api/mfa".equals(path) || (path != null && path.startsWith("/api/mfa/"));
     }
 }

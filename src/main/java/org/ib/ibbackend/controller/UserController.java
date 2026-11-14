@@ -6,6 +6,7 @@ import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.security.UserRolePolicy;
 import org.ib.ibbackend.service.AuditLogService;
 import org.ib.ibbackend.service.MailMfaService;
+import org.ib.ibbackend.service.PasswordResetService;
 import org.ib.ibbackend.service.RefreshTokenService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -47,20 +48,30 @@ public class UserController {
     private final RefreshTokenService refreshTokenService;
     private final MailMfaService mailMfaService;
     private final AuditLogService auditLogService;
+    private final PasswordResetService passwordResetService;
 
     public UserController(UserRepository userRepository) {
-        this(userRepository, null, null, null);
+        this(userRepository, null, null, null, null);
     }
 
     @Autowired
     public UserController(UserRepository userRepository,
                           RefreshTokenService refreshTokenService,
                           MailMfaService mailMfaService,
-                          AuditLogService auditLogService) {
+                          AuditLogService auditLogService,
+                          PasswordResetService passwordResetService) {
         this.userRepository = userRepository;
         this.refreshTokenService = refreshTokenService;
         this.mailMfaService = mailMfaService;
         this.auditLogService = auditLogService;
+        this.passwordResetService = passwordResetService;
+    }
+
+    public UserController(UserRepository userRepository,
+                          RefreshTokenService refreshTokenService,
+                          MailMfaService mailMfaService,
+                          AuditLogService auditLogService) {
+        this(userRepository, refreshTokenService, mailMfaService, auditLogService, null);
     }
 
     @GetMapping
@@ -243,20 +254,28 @@ public class UserController {
         if (targetUser.getEmail() == null || targetUser.getEmail().isBlank()) {
             return ResponseEntity.badRequest().body(error("User email is missing"));
         }
-        if (mailMfaService == null || !mailMfaService.isEnabled()) {
+        if (mailMfaService == null || passwordResetService == null) {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                    .body(error("Password resend is unavailable because email service is disabled"));
+                    .body(error("Password recovery is temporarily unavailable"));
         }
 
-        mailMfaService.issueOtp(targetUser.getEmail());
-        if (refreshTokenService != null) {
-            refreshTokenService.revokeAllActiveTokensForUser(targetUser);
+        Optional<PasswordResetService.ResetEmail> resetEmail =
+                passwordResetService.requestReset(targetUser.getEmail());
+        if (resetEmail.isPresent()) {
+            PasswordResetService.ResetEmail email = resetEmail.get();
+            try {
+                mailMfaService.sendPasswordReset(email.email(), email.token());
+            } catch (MailMfaService.MailQueueFullException | IllegalStateException ex) {
+                passwordResetService.invalidateResetToken(email.token());
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                        .body(error("Password recovery is temporarily unavailable"));
+            }
         }
-        auditSuccess("PASSWORD_RESEND", String.valueOf(targetUser.getId()), "Store admin triggered password assistance OTP");
+        auditSuccess("PASSWORD_RESEND", String.valueOf(targetUser.getId()), "Store admin requested password recovery");
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("success", true);
-        response.put("message", "Password assistance OTP has been sent to the user email");
+        response.put("message", "If the account is eligible, password recovery instructions will be sent.");
         response.put("user", toManagedUserPayload(targetUser, currentUser));
         return ResponseEntity.ok(response);
     }

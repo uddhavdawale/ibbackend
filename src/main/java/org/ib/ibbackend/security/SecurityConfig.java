@@ -59,6 +59,8 @@ public class SecurityConfig {
                                 "/api/login",
                                 "/login",
                                 "/api/auth/login",
+                                "/api/auth/password/forgot",
+                                "/api/auth/password/reset",
                                 "/api/auth/signup",
                                 "/api/auth/refresh",
                                 "/api/auth/logout",
@@ -80,7 +82,8 @@ public class SecurityConfig {
                 "http://localhost:5173",
                 "http://localhost:3000",
                 "https://*.vercel.app",
-                "http://localhost:8080","https://*.inc1.devtunnels.ms"
+                "http://localhost:8080",
+                "https://*.inc1.devtunnels.ms"
         ));
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE","PATCH", "OPTIONS"));
         config.setAllowedHeaders(Arrays.asList("*"));

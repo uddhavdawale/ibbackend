@@ -19,7 +19,7 @@ public class MailMfaProperties {
     }
 
     public int getOtpLength() {
-        return otpLength > 0 ? otpLength : 6;
+        return 6;
     }
 
     public void setOtpLength(int otpLength) {
@@ -27,7 +27,7 @@ public class MailMfaProperties {
     }
 
     public int getExpiryMinutes() {
-        return expiryMinutes > 0 ? expiryMinutes : 5;
+        return expiryMinutes > 0 ? Math.min(expiryMinutes, 5) : 5;
     }
 
     public void setExpiryMinutes(int expiryMinutes) {

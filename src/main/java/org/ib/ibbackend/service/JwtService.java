@@ -64,6 +64,7 @@ public class JwtService {
                 .setSubject(user.getEmail())
                 .claim("role", user.getRole())
                 .claim("tokenType", "access")
+                .claim("authVersion", user.getAuthVersion())
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + accessTokenExpiryMs));
 
@@ -79,6 +80,7 @@ public class JwtService {
                 .setSubject(user.getEmail())
                 .claim("role", user.getRole())
                 .claim("tokenType", "refresh")
+                .claim("authVersion", user.getAuthVersion())
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + refreshTokenExpiryMs));
 
@@ -134,7 +136,9 @@ public class JwtService {
     public boolean isAccessTokenValid(String token, User user) {
         try {
             final String username = extractClaims(token).getSubject();
-            return username.equals(user.getEmail()) && !isTokenExpired(token);
+            return username.equals(user.getEmail())
+                    && hasCurrentAuthVersion(extractClaims(token), user)
+                    && !isTokenExpired(token);
         } catch (Exception e) {
             return false;
         }
@@ -143,7 +147,9 @@ public class JwtService {
     public boolean isRefreshTokenValid(String token, User user) {
         try {
             final String username = extractRefreshClaims(token).getSubject();
-            return username.equals(user.getEmail()) && !isRefreshTokenExpired(token);
+            return username.equals(user.getEmail())
+                    && hasCurrentAuthVersion(extractRefreshClaims(token), user)
+                    && !isRefreshTokenExpired(token);
         } catch (Exception e) {
             return false;
         }
@@ -159,5 +165,11 @@ public class JwtService {
 
     private boolean isRefreshTokenExpired(String token) {
         return extractRefreshClaims(token).getExpiration().before(new Date());
+    }
+
+    private boolean hasCurrentAuthVersion(Claims claims, User user) {
+        Object value = claims.get("authVersion");
+        long tokenVersion = value instanceof Number number ? number.longValue() : 0L;
+        return tokenVersion == user.getAuthVersion();
     }
 }

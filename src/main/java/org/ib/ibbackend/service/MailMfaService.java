@@ -2,113 +2,175 @@ package org.ib.ibbackend.service;
 
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
+import org.ib.ibbackend.config.AuthFlowProperties;
 import org.ib.ibbackend.config.MailMfaProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.mail.MailException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.SecureRandom;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 
 @Service
 public class MailMfaService {
     private static final Logger log = LoggerFactory.getLogger(MailMfaService.class);
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final MailMfaProperties properties;
+    private final AuthFlowProperties authFlowProperties;
     private final JavaMailSender mailSender;
-    private final Map<String, OtpEntry> otpStore = new ConcurrentHashMap<>();
+    private final ExecutorService mailDeliveryExecutor;
+    private BrevoEmailService brevoEmailService;
 
-    public MailMfaService(MailMfaProperties properties, JavaMailSender mailSender) {
+    @Value("${app.mail.provider:auto}")
+    private String mailProvider;
+
+    @Value("${spring.mail.password:}")
+    private String smtpPassword;
+
+    public MailMfaService(MailMfaProperties properties,
+                          AuthFlowProperties authFlowProperties,
+                          JavaMailSender mailSender,
+                          ExecutorService mailDeliveryExecutor) {
         this.properties = properties;
+        this.authFlowProperties = authFlowProperties;
         this.mailSender = mailSender;
+        this.mailDeliveryExecutor = mailDeliveryExecutor;
     }
 
     public boolean isEnabled() {
         return properties != null && properties.isEnabled();
     }
 
-    public String issueOtp(String email) {
-        String normalizedEmail = normalizeEmail(email);
-        String otp = generateOtp();
-        otpStore.put(normalizedEmail, new OtpEntry(otp, Instant.now().plus(properties.getExpiryMinutes(), ChronoUnit.MINUTES)));
-
-        if (isEnabled() && mailSender != null) {
-            sendMail(normalizedEmail, otp);
-        } else {
-            log.info("Mail MFA is disabled or mail sender is not configured. OTP generated for {}", normalizedEmail);
-        }
-
-        return otp;
-    }
-
-    public boolean verifyOtp(String email, String otp) {
-        if (email == null || otp == null) {
+    public boolean isReady() {
+        if (!isEnabled()) {
             return false;
         }
-
-        String normalizedEmail = normalizeEmail(email);
-        OtpEntry stored = otpStore.get(normalizedEmail);
-        if (stored == null) {
-            return false;
+        if ("brevo-api".equalsIgnoreCase(mailProvider)) {
+            return isBrevoApiReady();
         }
-
-        if (Instant.now().isAfter(stored.expiresAt) || Instant.now().equals(stored.expiresAt)) {
-            otpStore.remove(normalizedEmail);
-            return false;
+        if ("smtp".equalsIgnoreCase(mailProvider)) {
+            return isSmtpReady();
         }
-
-        byte[] storedBytes = stored.otp.getBytes(StandardCharsets.UTF_8);
-        byte[] candidateBytes = otp.getBytes(StandardCharsets.UTF_8);
-        boolean valid = MessageDigest.isEqual(storedBytes, candidateBytes);
-        if (valid) {
-            otpStore.remove(normalizedEmail);
-        }
-        return valid;
+        return isBrevoApiReady() || isSmtpReady();
     }
 
-    private String generateOtp() {
-        int length = properties.getOtpLength();
-        StringBuilder otp = new StringBuilder();
-        for (int i = 0; i < length; i++) {
-            otp.append(SECURE_RANDOM.nextInt(10));
-        }
-        return otp.toString();
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setBrevoEmailService(BrevoEmailService brevoEmailService) {
+        this.brevoEmailService = brevoEmailService;
     }
 
-    private void sendMail(String email, String otp) {
+    public void sendOtp(String email, String otp) {
+        enqueue("MFA", () -> sendMessage(
+                email,
+                properties.getSubject(),
+                "Your verification code is " + otp + ". It expires in "
+                        + properties.getExpiryMinutes() + " minutes."
+        ));
+    }
+
+    public void sendPasswordReset(String email, String token) {
+        String baseUrl = authFlowProperties.getFrontendBaseUrl();
+        if (baseUrl == null || baseUrl.isBlank()) {
+            throw new IllegalStateException("Password reset frontend URL is not configured");
+        }
+        String resetUrl = baseUrl.replaceAll("/+$", "")
+                + "/login#resetToken="
+                + URLEncoder.encode(token, StandardCharsets.UTF_8);
+        enqueue("password reset", () -> sendMessage(
+                email,
+                "Password reset instructions",
+                "Use the following link to reset your password. This link expires in "
+                        + authFlowProperties.getPasswordResetExpiryMinutes() + " minutes:\n\n"
+                        + resetUrl
+        ));
+    }
+
+    public void sendPasswordChangedNotification(String email) {
+        enqueue("password change notification", () -> sendMessage(
+                email,
+                "Your password was changed",
+                "The password for your account was changed. If you did not make this change, contact support."
+        ));
+    }
+
+    private void enqueue(String messageType, Runnable delivery) {
+        if (!isReady()) {
+            throw new IllegalStateException("Transactional email is not configured");
+        }
+        try {
+            mailDeliveryExecutor.execute(() -> {
+                try {
+                    delivery.run();
+                    log.debug("Mail delivery succeeded for message type {}", messageType);
+                } catch (BrevoEmailService.BrevoDeliveryException ex) {
+                    if (ex.getStatusCode() == null) {
+                        log.error("Brevo API delivery failed for message type {} (connection error)",
+                                messageType, ex.getCause());
+                    } else {
+                        ex.printStackTrace();
+                        log.error("Brevo API delivery failed for message type {} (HTTP {})",
+                                messageType, ex.getStatusCode());
+                    }
+                } catch (MailDeliveryException | MailException | IllegalArgumentException | IllegalStateException ex) {
+                    log.error("Mail delivery failed for message type {} ({})",
+                            messageType, ex.getClass().getSimpleName());
+                }
+            });
+        } catch (RejectedExecutionException ex) {
+            log.warn("Mail delivery queue is full for message type {}", messageType);
+            throw new MailQueueFullException();
+        }
+    }
+
+    private void sendMessage(String email, String subject, String body) {
+        if (useBrevoApi()) {
+            if (brevoEmailService == null || !brevoEmailService.isConfigured()) {
+                throw new IllegalStateException("Brevo API key is not configured");
+            }
+            brevoEmailService.send(properties.getFrom(), email, subject, body);
+            return;
+        }
         try {
             MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true);
+            MimeMessageHelper helper = new MimeMessageHelper(message, StandardCharsets.UTF_8.name());
             helper.setFrom(properties.getFrom());
             helper.setTo(email);
-            helper.setSubject(properties.getSubject());
-            helper.setText("Your verification code is " + otp + ". It expires in " + properties.getExpiryMinutes() + " minutes.");
+            helper.setSubject(subject);
+            helper.setText(body, false);
             mailSender.send(message);
-            log.info("MFA OTP sent to {}", email);
-        } catch (MessagingException e) {
-            log.error("Failed to send MFA OTP email to {}", email, e);
+        } catch (MessagingException ex) {
+            throw new MailDeliveryException(ex);
         }
     }
 
-    private String normalizeEmail(String email) {
-        return email == null ? "" : email.trim().toLowerCase();
+    private boolean useBrevoApi() {
+        return "brevo-api".equalsIgnoreCase(mailProvider)
+                || (!"smtp".equalsIgnoreCase(mailProvider) && isBrevoApiReady());
     }
 
-    private static class OtpEntry {
-        private final String otp;
-        private final Instant expiresAt;
+    private boolean isBrevoApiReady() {
+        return brevoEmailService != null && brevoEmailService.isConfigured();
+    }
 
-        private OtpEntry(String otp, Instant expiresAt) {
-            this.otp = otp;
-            this.expiresAt = expiresAt;
+    private boolean isSmtpReady() {
+        return mailSender != null && smtpPassword != null && !smtpPassword.isBlank();
+    }
+
+    public static final class MailQueueFullException extends RuntimeException {
+        public MailQueueFullException() {
+            super("Mail delivery queue is full");
+        }
+    }
+
+    private static final class MailDeliveryException extends RuntimeException {
+        private MailDeliveryException(MessagingException cause) {
+            super(cause);
         }
     }
 }

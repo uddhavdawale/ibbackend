@@ -124,12 +124,7 @@ public class RefreshTokenService {
             return;
         }
 
-        List<RefreshToken> activeTokens = refreshTokenRepository.findByUserIdAndRevokedFalse(user.getId());
-        for (RefreshToken token : activeTokens) {
-            token.setRevoked(true);
-            token.setRevokedAt(LocalDateTime.now());
-        }
-        refreshTokenRepository.saveAll(activeTokens);
+        refreshTokenRepository.revokeAllActiveForUser(user.getId(), LocalDateTime.now());
     }
 
     public boolean hasActiveTokenForUser(User user) {

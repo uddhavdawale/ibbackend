@@ -32,7 +32,6 @@ import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/auth")
-@CrossOrigin(origins = "http://localhost:5173", allowCredentials = "true")
 public class AuthController {
 
     @Autowired
@@ -367,7 +366,7 @@ public class AuthController {
         if (user == null) {
             return Optional.empty();
         }
-        if (user.getTenant() == null) {
+        if (user.getTenant() == null && !UserRolePolicy.isSystemAdmin(user.getRole())) {
             user.setTenant(tenantRepo.save(buildTenantReferenceForExistingUser(user)));
             userRepo.save(user);
         }
