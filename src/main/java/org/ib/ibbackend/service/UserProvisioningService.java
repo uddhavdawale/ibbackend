@@ -5,6 +5,7 @@ import org.ib.ibbackend.entity.RetailerStatus;
 import org.ib.ibbackend.entity.Tenant;
 import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.repository.TenantRepository;
+import org.ib.ibbackend.security.UserRolePolicy;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
@@ -83,6 +84,12 @@ public class UserProvisioningService {
             throw new SecurityException("Creator tenant is required");
         }
 
+        String targetRole = normalizeRole(
+                request.getRole() == null || request.getRole().isBlank() ? "store_manager" : request.getRole());
+        if (!UserRolePolicy.isSystemAdmin(creatorRole) && UserRolePolicy.isSystemAdmin(targetRole)) {
+            throw new SecurityException("Only system admins can create system admin users");
+        }
+
         User user = buildCommonUserFields(request, normalizedEmail, normalizedUsername);
 
         String businessNameFallback = resolveBusinessName(request.getBusinessName());
@@ -97,7 +104,7 @@ public class UserProvisioningService {
         user.setBusinessName(creatorBusinessName);
         user.setOwnerName(creatorOwnerName);
         user.setTenant(creator.getTenant());
-        user.setRole(normalizeRole(request.getRole() == null || request.getRole().isBlank() ? "store_manager" : request.getRole()));
+        user.setRole(targetRole);
         return user;
     }
 

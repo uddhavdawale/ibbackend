@@ -217,6 +217,73 @@ class AuthControllerTenantTest {
     }
 
     @Test
+    void signup_authenticatedStoreAdmin_shouldRejectSystemAdminRoles() {
+        Tenant tenant = new Tenant();
+        tenant.setId(78);
+
+        User creator = new User();
+        creator.setEmail("admin78@example.com");
+        creator.setRole("store_admin");
+        creator.setTenant(tenant);
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("admin78@example.com", null)
+        );
+        when(userRepo.findByEmail("admin78@example.com")).thenReturn(Optional.of(creator));
+
+        SignupRequest request = new SignupRequest();
+        request.setUsername("new_admin78");
+        request.setEmail("newadmin78@example.com");
+        request.setPasswordHash("verySecurePassword123");
+
+        for (String role : new String[]{"SYSTEM_ADMIN", "system_administrator", "super_admin", "org_admin"}) {
+            request.setRole(role);
+            ResponseEntity<ApiResponse> response = authController.signup(request);
+
+            assertEquals(403, response.getStatusCode().value(), "Role should be rejected: " + role);
+            assertNotNull(response.getBody());
+            assertFalse(response.getBody().isSuccess());
+        }
+
+        verify(userRepo, never()).save(any(User.class));
+        verify(passwordSecurityService, never()).hashNewPassword(anyString());
+    }
+
+    @Test
+    void signup_authenticatedSystemAdmin_shouldRetainSystemAdminRoleCreation() {
+        Tenant tenant = new Tenant();
+        tenant.setId(79);
+
+        User creator = new User();
+        creator.setEmail("systemadmin@example.com");
+        creator.setRole("system_admin");
+        creator.setTenant(tenant);
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("systemadmin@example.com", null)
+        );
+        when(userRepo.findByEmail("systemadmin@example.com")).thenReturn(Optional.of(creator));
+        when(userRepo.existsByEmail("newadmin@example.com")).thenReturn(false);
+        when(passwordSecurityService.hashNewPassword("verySecurePassword123")).thenReturn("hashedPassword");
+
+        SignupRequest request = new SignupRequest();
+        request.setUsername("new_system_admin");
+        request.setEmail("newadmin@example.com");
+        request.setPasswordHash("verySecurePassword123");
+        request.setRole("SYSTEM_ADMIN");
+
+        ResponseEntity<ApiResponse> response = authController.signup(request);
+
+        assertEquals(200, response.getStatusCode().value());
+        assertNotNull(response.getBody());
+        assertTrue(response.getBody().isSuccess());
+
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepo).save(userCaptor.capture());
+        assertEquals("system_admin", userCaptor.getValue().getRole());
+    }
+
+    @Test
     void signup_authenticatedNonAdmin_shouldReturnForbidden() {
         Tenant creatorTenant = new Tenant();
         creatorTenant.setId(88);
