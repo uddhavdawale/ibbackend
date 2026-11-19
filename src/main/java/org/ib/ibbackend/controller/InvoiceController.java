@@ -14,6 +14,7 @@ import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.service.AuditLogService;
 import org.ib.ibbackend.service.InventorySecurityService;
 import org.ib.ibbackend.service.InvoiceNumberGenerator;
+import org.ib.ibbackend.service.PaymentCollectionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,6 +64,8 @@ public class InvoiceController {
 
     @Autowired(required = false)
     private org.ib.ibbackend.service.CustomerProfileService customerProfileService;
+    @Autowired
+    private PaymentCollectionService paymentCollectionService;
 
     private void auditSuccess(String action, String resourceId, String detail) {
         if (auditLogService != null) {
@@ -419,18 +422,23 @@ public class InvoiceController {
             String email = SecurityContextHolder.getContext().getAuthentication() != null
                     ? SecurityContextHolder.getContext().getAuthentication().getName()
                     : null;
-            if (email != null && !email.isBlank() && userRepository != null) {
-                User currentUser = userRepository.findByEmail(email).orElse(null);
-                if (currentUser != null) {
-                    invoice.setUserId(currentUser.getId());
-                }
+            User currentUser = email == null || email.isBlank()
+                    ? null
+                    : userRepository.findByEmail(email)
+                            .or(() -> userRepository.findByUsername(email))
+                            .orElse(null);
+            if (currentUser == null || currentUser.getTenant() == null
+                    || currentUser.getTenant().getId() != Math.toIntExact(tenantId)) {
+                throw new org.springframework.security.access.AccessDeniedException("Access denied");
             }
+            invoice.setUserId(currentUser.getId());
 
             for (InvoiceItem item : invoiceItems) {
                 item.setInvoice(invoice);
             }
 
             Invoice saved = invoiceRepository.save(invoice);
+            paymentCollectionService.recordInitialPayment(saved, currentUser);
             if (customerProfileService != null) {
                 customerProfileService.syncFromInvoice(saved);
             }

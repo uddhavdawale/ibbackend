@@ -2,9 +2,11 @@ package org.ib.ibbackend.repository;
 
 import org.ib.ibbackend.dto.CustomerInvoiceRecord;
 import org.ib.ibbackend.entity.NonGstInvoice;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -39,6 +41,10 @@ public interface NonGstInvoiceRepository extends JpaRepository<NonGstInvoice, Lo
 
     @Query("SELECT i FROM NonGstInvoice i WHERE i.id = :id AND i.tenant.id = :tenantId")
     Optional<NonGstInvoice> findByIdAndTenantId(@Param("id") Long id, @Param("tenantId") Long tenantId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT i FROM NonGstInvoice i WHERE i.id = :id AND i.tenant.id = :tenantId")
+    Optional<NonGstInvoice> findByIdAndTenantIdForUpdate(@Param("id") Long id, @Param("tenantId") Long tenantId);
 
     @Query("SELECT i FROM NonGstInvoice i WHERE i.tenant.id = :tenantId AND (LOWER(i.invoiceNo) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(i.customerName) LIKE LOWER(CONCAT('%', :search, '%')))")
     Page<NonGstInvoice> findBySearchAndTenantId(@Param("tenantId") Long tenantId,

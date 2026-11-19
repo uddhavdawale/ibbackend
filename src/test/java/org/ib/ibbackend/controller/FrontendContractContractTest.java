@@ -15,6 +15,7 @@ import org.ib.ibbackend.repository.NonGstInvoiceRepository;
 import org.ib.ibbackend.repository.ProductRepository;
 import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.service.JwtService;
+import org.ib.ibbackend.service.PaymentCollectionService;
 import org.ib.ibbackend.service.PasswordSecurityService;
 import org.ib.ibbackend.service.RefreshTokenService;
 import org.junit.jupiter.api.AfterEach;
@@ -169,7 +170,17 @@ class FrontendContractContractTest {
         InvoiceController controller = new InvoiceController();
         ReflectionTestUtils.setField(controller, "productRepository", mock(ProductRepository.class));
         ReflectionTestUtils.setField(controller, "invoiceRepository", mock(InvoiceRepository.class));
-        ReflectionTestUtils.setField(controller, "userRepository", mock(UserRepository.class));
+        UserRepository userRepository = mock(UserRepository.class);
+        ReflectionTestUtils.setField(controller, "userRepository", userRepository);
+        ReflectionTestUtils.setField(controller, "paymentCollectionService", mock(PaymentCollectionService.class));
+
+        Tenant tenant = new Tenant();
+        tenant.setId(7);
+        User currentUser = new User();
+        currentUser.setId(22L);
+        currentUser.setEmail("owner@example.com");
+        currentUser.setTenant(tenant);
+        when(userRepository.findByEmail("owner@example.com")).thenReturn(Optional.of(currentUser));
 
         Product product = new Product();
         product.setId(10L);

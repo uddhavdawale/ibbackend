@@ -44,6 +44,7 @@ public class NonGstInvoiceService {
     private final AuditLogService auditLogService;
     private final InventorySecurityService inventorySecurityService;
     private final CustomerProfileService customerProfileService;
+    private final PaymentCollectionService paymentCollectionService;
 
     @Autowired
     public NonGstInvoiceService(
@@ -52,7 +53,8 @@ public class NonGstInvoiceService {
             UserRepository userRepository,
             AuditLogService auditLogService,
             InventorySecurityService inventorySecurityService,
-            CustomerProfileService customerProfileService
+            CustomerProfileService customerProfileService,
+            PaymentCollectionService paymentCollectionService
     ) {
         this.nonGstInvoiceRepository = nonGstInvoiceRepository;
         this.productRepository = productRepository;
@@ -60,6 +62,7 @@ public class NonGstInvoiceService {
         this.auditLogService = auditLogService;
         this.inventorySecurityService = inventorySecurityService;
         this.customerProfileService = customerProfileService;
+        this.paymentCollectionService = paymentCollectionService;
     }
 
     public NonGstInvoiceService(
@@ -67,7 +70,7 @@ public class NonGstInvoiceService {
             ProductRepository productRepository,
             UserRepository userRepository
     ) {
-        this(nonGstInvoiceRepository, productRepository, userRepository, null, null, null);
+        this(nonGstInvoiceRepository, productRepository, userRepository, null, null, null, null);
     }
 
     @Transactional
@@ -179,6 +182,9 @@ public class NonGstInvoiceService {
 
         invoice.setItems(items);
         NonGstInvoice saved = nonGstInvoiceRepository.save(invoice);
+        if (paymentCollectionService != null) {
+            paymentCollectionService.recordInitialPayment(saved, currentUser);
+        }
         if (customerProfileService != null) {
             customerProfileService.syncFromNonGstInvoice(saved);
         }

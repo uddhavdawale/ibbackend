@@ -12,6 +12,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
+import java.util.List;
 
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
@@ -39,6 +40,47 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     @Query("select u from User u where u.id = :id and u.tenant.id = :tenantId and u.deletedAt is null")
     Optional<User> findByIdAndTenant_Id(@Param("id") Long id, @Param("tenantId") int tenantId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where u.id = :id and u.tenant.id = :tenantId and u.deletedAt is null")
+    Optional<User> findByIdAndTenant_IdForUpdate(@Param("id") Long id, @Param("tenantId") int tenantId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where u.id = :id and u.tenant.id = :tenantId")
+    Optional<User> findTenantUserRecordByIdForUpdate(@Param("id") Long id, @Param("tenantId") int tenantId);
+
+    @Query("""
+            select u.id from User u
+            where u.tenant.id = :tenantId
+              and u.deletedAt is null
+              and coalesce(u.disabled, false) = false
+              and lower(trim(coalesce(u.role, ''))) = 'store_admin'
+              and (
+                  lower(trim(coalesce(u.username, ''))) = lower(trim(:identifier))
+                  or lower(trim(coalesce(u.email, ''))) = lower(trim(:identifier))
+                  or lower(trim(coalesce(u.ownerName, ''))) = lower(trim(:identifier))
+              )
+            """)
+    List<Long> findActiveStoreAdminIdsByTenantAndIdentifier(
+            @Param("tenantId") int tenantId, @Param("identifier") String identifier);
+
+    @Query("""
+            select u from User u
+            where u.tenant.id = :tenantId
+              and u.deletedAt is null
+              and lower(trim(coalesce(u.role, ''))) = 'store_admin'
+            order by u.ownerName, u.id
+            """)
+    List<User> findTenantStoreAdmins(@Param("tenantId") int tenantId);
+
+    @Query("""
+            select u from User u
+            where u.tenant.id = :tenantId
+              and u.deletedAt is null
+              and lower(trim(coalesce(u.role, ''))) in ('billing_manager', 'store_manager')
+            order by u.ownerName, u.id
+            """)
+    List<User> findTenantCashCollectors(@Param("tenantId") int tenantId);
 
         @Query("""
                 select u
