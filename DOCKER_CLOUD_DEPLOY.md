@@ -19,7 +19,9 @@ Set these backend service variables in Railway:
   trailing slashes.
 - `APP_FRONTEND_BASE_URL`: the deployed frontend URL.
 - `TENANT_DOCUMENT_ENCRYPTION_KEY`: a stable, backed-up base64-encoded 32-byte
-  key if tenant document encryption is used.
+  key if tenant document encryption is used. Payment screenshots use this
+  server-side key and are encrypted in PostgreSQL; cash-only ticket submissions
+  do not require it. Keep the same key across backend instances and deployments.
 - `APP_BOOTSTRAP_DEMO_USER_EMAIL` and `APP_BOOTSTRAP_DEMO_USER_PASSWORD`.
 - `APP_BOOTSTRAP_SYSTEM_ADMIN_ONE_EMAIL` and
   `APP_BOOTSTRAP_SYSTEM_ADMIN_ONE_PASSWORD`.
@@ -64,7 +66,7 @@ JWT_REFRESH_SECRET=<long-random-refresh-secret>
 TENANT_DOCUMENT_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
 ```
 
-Generate `TENANT_DOCUMENT_ENCRYPTION_KEY` with a secure random generator (for example, `openssl rand -base64 32`) and keep it in a secret manager. The key must remain stable and backed up; retailer documents cannot be decrypted without the key.
+Generate `TENANT_DOCUMENT_ENCRYPTION_KEY` with a secure random generator (for example, `openssl rand -base64 32`) and keep it in a secret manager. The key must remain stable and backed up; tenant documents and payment proofs cannot be decrypted without the key. An absent or invalid key returns `503` with code `DOCUMENT_STORAGE_NOT_CONFIGURED` when a proof is uploaded or retrieved.
 
 ## Push to Docker Hub
 ```powershell

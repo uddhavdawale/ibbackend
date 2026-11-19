@@ -1,9 +1,8 @@
 package org.ib.ibbackend.service;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
+import org.ib.ibbackend.exception.DocumentStorageNotConfiguredException;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
@@ -70,9 +69,7 @@ public class TenantDocumentEncryptionService {
             }
             return new SecretKeySpec(key, "AES");
         } catch (IllegalArgumentException ex) {
-            throw new ResponseStatusException(
-                    HttpStatus.SERVICE_UNAVAILABLE,
-                    "Secure document storage is not configured");
+            throw new DocumentStorageNotConfiguredException();
         }
     }
 }
