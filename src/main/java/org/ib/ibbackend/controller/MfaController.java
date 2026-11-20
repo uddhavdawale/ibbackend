@@ -23,6 +23,7 @@ import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URI;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
@@ -30,6 +31,7 @@ import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/mfa")
+@CrossOrigin(originPatterns  = "*")
 public class MfaController {
     private static final String PREAUTH_COOKIE = "mfaPreAuth";
     private static final Logger log = LoggerFactory.getLogger(MfaController.class);
@@ -113,7 +115,7 @@ public class MfaController {
                     Map.of("success", false, "message", "MFA challenge is invalid or expired."));
         } catch (MailMfaService.MailQueueFullException | IllegalStateException ex) {
             authChallengeService.invalidateOtp(request.getChallengeId(), preAuthCookie);
-            log.warn("MFA email code could not be queued");
+            log.warn("MFA email code could not be queued", ex);
             auditFailure("MFA_CODE_SENT", "N/A", "MFA email could not be queued");
             return noStore(HttpStatus.SERVICE_UNAVAILABLE,
                     Map.of("success", false, "message", "MFA verification is temporarily unavailable."));
@@ -255,15 +257,101 @@ public class MfaController {
     }
 
     private boolean hasTrustedOrigin(HttpServletRequest request) {
-        String origin = request.getHeader("Origin");
-        if (origin == null || origin.isBlank()) {
+        if (request == null) {
             return false;
         }
+
+        String origin = request.getHeader(HttpHeaders.ORIGIN);
+        if (origin != null && !origin.isBlank()) {
+            boolean trusted = isAllowedOrigin(origin);
+            if (!trusted) {
+                log.debug("MFA request rejected: Origin header is not in the configured allowlist");
+            }
+            return trusted;
+        }
+
+        String referer = request.getHeader(HttpHeaders.REFERER);
+        boolean trustedReferer = isTrustedReferer(referer);
+        if (trustedReferer) {
+            log.debug("MFA request accepted using trusted Referer because Origin header was missing");
+        } else {
+            log.debug("MFA request rejected: Origin header is missing and Referer is not trusted");
+        }
+        return trustedReferer;
+    }
+
+    private boolean isTrustedReferer(String referer) {
+        if (referer == null || referer.isBlank()) {
+            log.debug("MFA request rejected: no Referer header was sent");
+            return false;
+        }
+        try {
+            URI refererUri = URI.create(referer);
+            if (refererUri.getRawUserInfo() != null || refererUri.getScheme() == null
+                    || refererUri.getHost() == null) {
+                log.debug("MFA request rejected: Referer header does not contain a valid origin");
+                return false;
+            }
+            boolean trusted = isAllowedOrigin(
+                    refererUri.getScheme(), refererUri.getHost(), refererUri.getPort());
+            if (!trusted) {
+                String port = refererUri.getPort() == -1 ? "" : ":" + refererUri.getPort();
+                log.debug("MFA request rejected: Referer origin {}://{}{} is not in the configured allowlist",
+                        refererUri.getScheme(), refererUri.getHost(), port);
+            }
+            return trusted;
+        } catch (IllegalArgumentException ex) {
+            log.debug("MFA request rejected: Referer header is malformed");
+            return false;
+        }
+    }
+
+    private boolean isAllowedOrigin(String origin) {
+        try {
+            URI originUri = URI.create(origin);
+            if (originUri.getRawUserInfo() != null || originUri.getRawPath() == null
+                    || !originUri.getRawPath().isEmpty() || originUri.getRawQuery() != null
+                    || originUri.getRawFragment() != null) {
+                return false;
+            }
+            return isAllowedOrigin(originUri.getScheme(), originUri.getHost(), originUri.getPort());
+        } catch (IllegalArgumentException ex) {
+            return false;
+        }
+    }
+
+    private boolean isAllowedOrigin(String scheme, String host, int port) {
+        if (scheme == null || host == null
+                || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
+            return false;
+        }
+        int candidatePort = effectivePort(scheme, port);
         for (String allowedOrigin : allowedOrigins.split(",")) {
-            if (origin.equals(allowedOrigin.trim())) {
-                return true;
+            try {
+                URI allowedUri = URI.create(allowedOrigin.trim());
+                if (allowedUri.getRawUserInfo() == null
+                        && allowedUri.getScheme() != null
+                        && allowedUri.getHost() != null
+                        && allowedUri.getRawPath() != null
+                        && allowedUri.getRawPath().isEmpty()
+                        && allowedUri.getRawQuery() == null
+                        && allowedUri.getRawFragment() == null
+                        && scheme.equalsIgnoreCase(allowedUri.getScheme())
+                        && host.equalsIgnoreCase(allowedUri.getHost())
+                        && candidatePort == effectivePort(allowedUri.getScheme(), allowedUri.getPort())) {
+                    return true;
+                }
+            } catch (IllegalArgumentException ex) {
+                log.warn("Ignoring malformed configured CORS origin");
             }
         }
         return false;
+    }
+
+    private int effectivePort(String scheme, int port) {
+        if (port != -1) {
+            return port;
+        }
+        return scheme.equalsIgnoreCase("https") ? 443 : 80;
     }
 }

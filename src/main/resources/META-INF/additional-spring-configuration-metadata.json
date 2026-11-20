@@ -1,0 +1,30 @@
+{
+  "properties": [
+    {"name": "app.jwt.access-secret", "type": "java.lang.String"},
+    {"name": "app.jwt.refresh-secret", "type": "java.lang.String"},
+    {"name": "app.jwt.access-token-expiry-ms", "type": "java.lang.Long"},
+    {"name": "app.jwt.refresh-token-expiry-ms", "type": "java.lang.Long"},
+    {"name": "app.security.enforce-active-refresh-session", "type": "java.lang.Boolean"},
+    {"name": "app.security.refresh-cookie.secure", "type": "java.lang.Boolean"},
+    {"name": "app.security.refresh-cookie.same-site", "type": "java.lang.String"},
+    {"name": "app.security.login.encrypted-only", "type": "java.lang.Boolean"},
+    {"name": "app.security.auth-flow.cleanup-delay-ms", "type": "java.lang.Long"},
+    {"name": "app.security.auth-flow.mfa-otp-hmac-secret", "type": "java.lang.String"},
+    {"name": "security.login.rsa-private-key-base64", "type": "java.lang.String"},
+    {"name": "app.mail.provider", "type": "java.lang.String"},
+    {"name": "app.mail.brevo.api-key", "type": "java.lang.String"},
+    {"name": "app.upload.max-size-bytes", "type": "java.lang.Long"},
+    {"name": "app.upload.max-records", "type": "java.lang.Integer"},
+    {"name": "app.tenant-documents.encryption-key", "type": "java.lang.String"},
+    {"name": "app.cors.allowed-origins", "type": "java.lang.String"},
+    {"name": "app.audit.retention.cron", "type": "java.lang.String"},
+    {"name": "app.audit.retention.zone", "type": "java.lang.String"},
+    {"name": "app.bootstrap.enabled", "type": "java.lang.Boolean"},
+    {"name": "app.bootstrap.demo.user.email", "type": "java.lang.String"},
+    {"name": "app.bootstrap.demo.user.password", "type": "java.lang.String"},
+    {"name": "app.bootstrap.system.admin.one.email", "type": "java.lang.String"},
+    {"name": "app.bootstrap.system.admin.one.password", "type": "java.lang.String"},
+    {"name": "app.bootstrap.system.admin.two.email", "type": "java.lang.String"},
+    {"name": "app.bootstrap.system.admin.two.password", "type": "java.lang.String"}
+  ]
+}

@@ -176,7 +176,6 @@ class MfaControllerTest {
     @Test
     void verifyOtpShouldRejectUsernameOnlyRequests() {
         MfaOtpRequest request = new MfaOtpRequest();
-        request.setUsername("owner@example.com");
         request.setOtp("123456");
         when(mailMfaService.isEnabled()).thenReturn(true);
 
@@ -189,6 +188,36 @@ class MfaControllerTest {
     @Test
     void sendOtpShouldRejectRequestsWithoutTrustedOrigin() {
         when(httpRequest.getHeader("Origin")).thenReturn("https://attacker.example");
+
+        ResponseEntity<Map<String, Object>> response = controller.sendOtp(null, null, httpRequest);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(403);
+    }
+
+    @Test
+    void sendOtpShouldAcceptTrustedRefererWhenOriginIsMissing() {
+        when(httpRequest.getHeader(HttpHeaders.ORIGIN)).thenReturn(null);
+        when(httpRequest.getHeader(HttpHeaders.REFERER)).thenReturn("http://localhost:5173/mfa");
+
+        ResponseEntity<Map<String, Object>> response = controller.sendOtp(null, null, httpRequest);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+    }
+
+    @Test
+    void sendOtpShouldRejectMissingOriginWhenRefererIsUntrusted() {
+        when(httpRequest.getHeader(HttpHeaders.ORIGIN)).thenReturn(null);
+        when(httpRequest.getHeader(HttpHeaders.REFERER)).thenReturn("https://attacker.example/mfa");
+
+        ResponseEntity<Map<String, Object>> response = controller.sendOtp(null, null, httpRequest);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(403);
+    }
+
+    @Test
+    void sendOtpShouldNotUseTrustedRefererToOverrideUntrustedOrigin() {
+        when(httpRequest.getHeader(HttpHeaders.ORIGIN)).thenReturn("https://attacker.example");
+        when(httpRequest.getHeader(HttpHeaders.REFERER)).thenReturn("http://localhost:5173/mfa");
 
         ResponseEntity<Map<String, Object>> response = controller.sendOtp(null, null, httpRequest);
 

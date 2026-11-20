@@ -7,7 +7,7 @@ ALTER TABLE products
 
 UPDATE products
 SET mrp = COALESCE(mrp, price),
-    set_size = COALESCE(set_size, 1),
+    set_size = COALESCE(set_size, '1'),
     sales_count = COALESCE(sales_count, 0),
     hsn_sac = COALESCE(NULLIF(TRIM(hsn_sac), ''), sku)
 WHERE mrp IS NULL

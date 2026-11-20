@@ -25,7 +25,16 @@ BEGIN
           AND tc.constraint_name = 'uk_products_tenant_sku'
           AND tc.constraint_type = 'UNIQUE'
     ) THEN
-        ALTER TABLE public.products
-            ADD CONSTRAINT uk_products_tenant_sku UNIQUE (tenant_id, sku);
+        IF EXISTS (
+            SELECT 1
+            FROM public.products
+            GROUP BY tenant_id, sku
+            HAVING COUNT(*) > 1
+        ) THEN
+            RAISE NOTICE 'Skipping legacy tenant/SKU uniqueness because duplicate SKUs exist; V14 applies tenant/SKU/PO uniqueness.';
+        ELSE
+            ALTER TABLE public.products
+                ADD CONSTRAINT uk_products_tenant_sku UNIQUE (tenant_id, sku);
+        END IF;
     END IF;
 END $$;
