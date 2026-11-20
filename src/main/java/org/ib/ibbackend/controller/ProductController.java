@@ -160,11 +160,13 @@ public class ProductController {
             entity.setQuantity(0);
         }
 
+        int initialQuantity = entity.getQuantity();
+        entity.setQuantity(0);
         Product savedProduct = productRepository.save(entity);
-        if (savedProduct.getQuantity() != null && savedProduct.getQuantity() > 0) {
-            inventorySecurityService.applyMovement(
+        if (initialQuantity > 0) {
+            savedProduct = inventorySecurityService.applyMovement(
                     savedProduct.getId(),
-                    savedProduct.getQuantity(),
+                    initialQuantity,
                     InventoryMovement.MovementType.ADJUSTMENT,
                     "PRODUCT_CREATE",
                     String.valueOf(savedProduct.getId()),
