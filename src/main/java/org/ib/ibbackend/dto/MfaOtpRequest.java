@@ -10,7 +10,6 @@ public class MfaOtpRequest {
     private String otp;
     @Size(max = 36)
     private String challengeId;
-    private String firebaseIdToken;
 
     public String getUsername() {
         return username;
@@ -36,11 +35,4 @@ public class MfaOtpRequest {
         this.otp = otp;
     }
 
-    public String getFirebaseIdToken() {
-        return firebaseIdToken;
-    }
-
-    public void setFirebaseIdToken(String firebaseIdToken) {
-        this.firebaseIdToken = firebaseIdToken;
-    }
 }

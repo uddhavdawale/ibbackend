@@ -28,7 +28,7 @@ Set these backend service variables in Railway:
 - `APP_BOOTSTRAP_SYSTEM_ADMIN_TWO_EMAIL` and
   `APP_BOOTSTRAP_SYSTEM_ADMIN_TWO_PASSWORD`.
 
-Set any mail, Firebase, or login-encryption variables required by the features
+Set any mail or login-encryption variables required by the features
 you enable. Keep credentials and key values in Railway's variable manager, not
 in source control. The Railway profile enables bootstrap-account provisioning
 by default and requires all six bootstrap variables above. After verifying the

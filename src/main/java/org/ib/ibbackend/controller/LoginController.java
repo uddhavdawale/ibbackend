@@ -11,7 +11,6 @@ import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.security.UserRolePolicy;
 import org.ib.ibbackend.service.AuditLogService;
 import org.ib.ibbackend.service.AuthChallengeService;
-import org.ib.ibbackend.service.FirebaseTokenVerifierService;
 import org.ib.ibbackend.service.JwtService;
 import org.ib.ibbackend.service.LoginCryptoService;
 import org.ib.ibbackend.service.MailMfaService;
@@ -60,9 +59,6 @@ public class LoginController {
 
     @Autowired(required = false)
     private AuthChallengeService authChallengeService;
-
-    @Autowired(required = false)
-    private FirebaseTokenVerifierService firebaseTokenVerifierService;
 
     @Autowired(required = false)
     private AuditLogService auditLogService;
@@ -121,30 +117,9 @@ public class LoginController {
                     .body(new LoginResponse(false, "Invalid username or password"));
         }
 
-        boolean firebaseMfaEnabled = isFirebaseMfaEnabled();
         boolean mailMfaEnabled = mailMfaService != null && mailMfaService.isEnabled();
 
-        if (firebaseMfaEnabled || mailMfaEnabled) {
-            if (firebaseMfaEnabled) {
-                log.info("Firebase MFA challenge issued");
-                auditSuccess("MFA_CHALLENGE", String.valueOf(user.getId()), "Firebase MFA challenge required");
-                LoginResponse response = new LoginResponse(false, "MFA verification required");
-                String loginUsername = resolveLoginUsername(user);
-                response.setRequiresMfa(true);
-                response.setUsername(loginUsername);
-                response.setRole(user.getRole());
-                response.setEmail(user.getEmail());
-                response.setUser(Map.of(
-                        "id", user.getId(),
-                    "username", loginUsername,
-                        "name", user.getOwnerName(),
-                        "email", user.getEmail(),
-                        "role", user.getRole(),
-                        "mfaProvider", "FIREBASE"
-                ));
-                return ResponseEntity.ok(response);
-            }
-
+        if (mailMfaEnabled) {
             if (!mailMfaService.isReady()) {
                 log.warn("MFA challenge unavailable: mail delivery is not configured");
                 auditFailure("MFA_CHALLENGE", String.valueOf(user.getId()), "Mail delivery is not configured");
@@ -294,10 +269,6 @@ public class LoginController {
         }
 
         return prefix + String.valueOf(suffix).substring(Math.max(0, String.valueOf(suffix).length() - 4));
-    }
-
-    private boolean isFirebaseMfaEnabled() {
-        return firebaseTokenVerifierService != null && firebaseTokenVerifierService.isEnabled();
     }
 
     @RequestMapping("/dummy")

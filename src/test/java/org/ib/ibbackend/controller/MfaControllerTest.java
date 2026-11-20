@@ -10,7 +10,6 @@ import org.ib.ibbackend.filter.JwtAuthFilter;
 import org.ib.ibbackend.filter.TenantContext;
 import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.service.AuthChallengeService;
-import org.ib.ibbackend.service.FirebaseTokenVerifierService;
 import org.ib.ibbackend.service.JwtService;
 import org.ib.ibbackend.service.MailMfaService;
 import org.ib.ibbackend.service.RefreshTokenService;
@@ -43,7 +42,6 @@ class MfaControllerTest {
     private AuthChallengeService authChallengeService;
     private JwtService jwtService;
     private RefreshTokenService refreshTokenService;
-    private FirebaseTokenVerifierService firebaseTokenVerifierService;
     private HttpServletRequest httpRequest;
 
     @BeforeEach
@@ -54,15 +52,12 @@ class MfaControllerTest {
         authChallengeService = mock(AuthChallengeService.class);
         jwtService = mock(JwtService.class);
         refreshTokenService = mock(RefreshTokenService.class);
-        firebaseTokenVerifierService = mock(FirebaseTokenVerifierService.class);
         httpRequest = mock(HttpServletRequest.class);
 
-        ReflectionTestUtils.setField(controller, "userRepository", userRepository);
         ReflectionTestUtils.setField(controller, "mailMfaService", mailMfaService);
         ReflectionTestUtils.setField(controller, "authChallengeService", authChallengeService);
         ReflectionTestUtils.setField(controller, "jwtService", jwtService);
         ReflectionTestUtils.setField(controller, "refreshTokenService", refreshTokenService);
-        ReflectionTestUtils.setField(controller, "firebaseTokenVerifierService", firebaseTokenVerifierService);
         ReflectionTestUtils.setField(controller, "allowedOrigins", "http://localhost:5173");
         when(httpRequest.getHeader("Origin")).thenReturn("http://localhost:5173");
     }
@@ -221,37 +216,6 @@ class MfaControllerTest {
                 controller.cancelChallenge(null, "preauth-cookie", httpRequest);
 
         assertThat(response.getStatusCode().value()).isEqualTo(400);
-    }
-
-    @Test
-    void verifyOtpShouldRetainFirebaseVerification() throws Exception {
-        User user = buildUser("owner@example.com", "9876543210");
-        MfaOtpRequest request = new MfaOtpRequest();
-        request.setUsername("owner@example.com");
-        request.setFirebaseIdToken("firebase-id-token");
-
-        when(userRepository.findByEmail("owner@example.com")).thenReturn(Optional.of(user));
-        when(firebaseTokenVerifierService.isEnabled()).thenReturn(true);
-        when(firebaseTokenVerifierService.verifyIdToken("firebase-id-token"))
-                .thenReturn(new FirebaseTokenVerifierService.FirebaseIdentity("uid-1", "owner@example.com", null, true));
-        when(jwtService.generateAccessToken(user)).thenReturn("access-token");
-        when(jwtService.generateRefreshToken(user)).thenReturn("refresh-token");
-
-        ResponseEntity<Map<String, Object>> response = controller.verifyOtp(request, null, httpRequest);
-
-        assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(response.getBody()).containsEntry("accessToken", "access-token");
-        assertThat(response.getBody()).doesNotContainKey("refreshToken");
-    }
-
-    @Test
-    void sendOtpShouldOnlyAcknowledgeFirebaseFlowWhenEnabled() {
-        when(firebaseTokenVerifierService.isEnabled()).thenReturn(true);
-
-        ResponseEntity<Map<String, Object>> response = controller.sendOtp(null, null, httpRequest);
-
-        assertThat(response.getStatusCode().value()).isEqualTo(202);
-        assertThat(response.getBody()).containsEntry("provider", "FIREBASE");
     }
 
     private User buildUser(String email, String phone) {

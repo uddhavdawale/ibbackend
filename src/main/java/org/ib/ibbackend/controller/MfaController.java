@@ -1,16 +1,13 @@
 package org.ib.ibbackend.controller;
 
-import com.google.firebase.auth.FirebaseAuthException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.ib.ibbackend.dto.MfaChallengeRequest;
 import org.ib.ibbackend.dto.MfaOtpRequest;
 import org.ib.ibbackend.entity.User;
-import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.security.UserRolePolicy;
 import org.ib.ibbackend.service.AuditLogService;
 import org.ib.ibbackend.service.AuthChallengeService;
-import org.ib.ibbackend.service.FirebaseTokenVerifierService;
 import org.ib.ibbackend.service.JwtService;
 import org.ib.ibbackend.service.MailMfaService;
 import org.ib.ibbackend.service.RefreshTokenService;
@@ -28,7 +25,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.Duration;
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -37,9 +33,6 @@ import java.util.Optional;
 public class MfaController {
     private static final String PREAUTH_COOKIE = "mfaPreAuth";
     private static final Logger log = LoggerFactory.getLogger(MfaController.class);
-
-    @Autowired
-    private UserRepository userRepository;
 
     @Autowired
     private MailMfaService mailMfaService;
@@ -55,9 +48,6 @@ public class MfaController {
 
     @Autowired
     private AuthCookieService authCookieService = AuthCookieService.defaultFactory();
-
-    @Autowired(required = false)
-    private FirebaseTokenVerifierService firebaseTokenVerifierService;
 
     @Autowired(required = false)
     private AuditLogService auditLogService;
@@ -82,14 +72,6 @@ public class MfaController {
             @Valid @RequestBody(required = false) MfaChallengeRequest request,
             @CookieValue(name = PREAUTH_COOKIE, required = false) String preAuthCookie,
             HttpServletRequest httpRequest) {
-        if (isFirebaseMfaEnabled() && (request == null || request.getChallengeId() == null)) {
-            log.debug("Firebase MFA code delivery delegated to the client SDK");
-            return noStore(HttpStatus.ACCEPTED, Map.of(
-                    "success", true,
-                    "provider", "FIREBASE",
-                    "message", "Use the Firebase verification flow."
-            ));
-        }
         if (!hasTrustedOrigin(httpRequest)) {
             log.warn("MFA code send rejected: untrusted origin");
             return noStore(HttpStatus.FORBIDDEN,
@@ -175,43 +157,6 @@ public class MfaController {
             @Valid @RequestBody MfaOtpRequest request,
             @CookieValue(name = PREAUTH_COOKIE, required = false) String preAuthCookie,
             HttpServletRequest httpRequest) {
-        String firebaseIdToken = request.getFirebaseIdToken();
-        if (firebaseIdToken != null && !firebaseIdToken.isBlank() && isFirebaseMfaEnabled()) {
-            Optional<User> userOpt = findUserByLoginIdentifier(request.getUsername());
-            if (userOpt.isEmpty()) {
-                log.debug("Firebase MFA verification rejected: account not found");
-                auditFailure("MFA_VERIFY", "N/A", "Firebase MFA account not found");
-                return noStore(HttpStatus.UNAUTHORIZED,
-                        Map.of("success", false, "message", "MFA verification failed."));
-            }
-            User user = userOpt.get();
-            if (user.isDisabled() || UserRolePolicy.isDisabledRole(user.getRole())) {
-                log.warn("Firebase MFA verification rejected: account is disabled");
-                refreshTokenService.revokeAllActiveTokensForUser(user);
-                auditFailure("MFA_VERIFY", String.valueOf(user.getId()), "Disabled account tried MFA verification");
-                return noStore(HttpStatus.UNAUTHORIZED,
-                        Map.of("success", false, "message", "MFA verification failed."));
-            }
-            try {
-                FirebaseTokenVerifierService.FirebaseIdentity identity =
-                        firebaseTokenVerifierService.verifyIdToken(firebaseIdToken);
-                if (!matchesUserIdentity(user, identity)) {
-                    log.warn("Firebase MFA verification rejected: identity mismatch");
-                    auditFailure("MFA_VERIFY", String.valueOf(user.getId()), "Firebase identity mismatch");
-                    return noStore(HttpStatus.UNAUTHORIZED,
-                            Map.of("success", false, "message", "MFA verification failed."));
-                }
-                log.info("Firebase MFA verification succeeded");
-                auditSuccess("MFA_VERIFY", String.valueOf(user.getId()), "Firebase MFA verification successful");
-                return issueLoginSuccessResponse(user);
-            } catch (FirebaseAuthException | IllegalArgumentException ex) {
-                log.debug("Firebase MFA verification rejected: token invalid");
-                auditFailure("MFA_VERIFY", String.valueOf(user.getId()), "Invalid Firebase MFA token");
-                return noStore(HttpStatus.UNAUTHORIZED,
-                        Map.of("success", false, "message", "MFA verification failed."));
-            }
-        }
-
         if (!hasTrustedOrigin(httpRequest)) {
             log.warn("MFA verification rejected: untrusted origin");
             return noStore(HttpStatus.FORBIDDEN,
@@ -296,44 +241,6 @@ public class MfaController {
                 .path("/api/mfa")
                 .maxAge(Duration.ZERO)
                 .build();
-    }
-
-    private boolean isFirebaseMfaEnabled() {
-        return firebaseTokenVerifierService != null && firebaseTokenVerifierService.isEnabled();
-    }
-
-    private boolean matchesUserIdentity(User user, FirebaseTokenVerifierService.FirebaseIdentity identity) {
-        if (user == null || identity == null) {
-            return false;
-        }
-        String firebaseEmail = normalize(identity.email());
-        String userEmail = normalize(user.getEmail());
-        if (firebaseEmail != null && userEmail != null && firebaseEmail.equals(userEmail)) {
-            return true;
-        }
-        String firebasePhone = normalize(identity.phoneNumber());
-        String userPhone = normalize(user.getPhone());
-        return firebasePhone != null && userPhone != null && firebasePhone.equals(userPhone);
-    }
-
-    private String normalize(String value) {
-        if (value == null) {
-            return null;
-        }
-        String normalized = value.trim().toLowerCase(Locale.ROOT);
-        return normalized.isBlank() ? null : normalized;
-    }
-
-    private Optional<User> findUserByLoginIdentifier(String loginIdentifier) {
-        if (loginIdentifier == null || loginIdentifier.isBlank()) {
-            return Optional.empty();
-        }
-        String identifier = loginIdentifier.trim();
-        Optional<User> userByUsername = userRepository.findByUsername(identifier.toLowerCase(Locale.ROOT));
-        if (userByUsername != null && userByUsername.isPresent()) {
-            return userByUsername;
-        }
-        return userRepository.findByEmail(identifier.toLowerCase(Locale.ROOT));
     }
 
     private String resolveLoginUsername(User user) {

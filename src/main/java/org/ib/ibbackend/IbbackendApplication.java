@@ -2,7 +2,6 @@ package org.ib.ibbackend;
 
 import org.ib.ibbackend.config.AuditRetentionProperties;
 import org.ib.ibbackend.config.AuthFlowProperties;
-import org.ib.ibbackend.config.FirebaseMfaProperties;
 import org.ib.ibbackend.config.MailMfaProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,7 +13,7 @@ import org.springframework.data.web.config.EnableSpringDataWebSupport;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
-@EnableConfigurationProperties({MailMfaProperties.class, FirebaseMfaProperties.class, AuditRetentionProperties.class,
+@EnableConfigurationProperties({MailMfaProperties.class, AuditRetentionProperties.class,
         AuthFlowProperties.class})
 @EnableJpaRepositories(basePackages = "org.ib.ibbackend.repository")
 @EnableSpringDataWebSupport(pageSerializationMode = EnableSpringDataWebSupport.PageSerializationMode.VIA_DTO)
