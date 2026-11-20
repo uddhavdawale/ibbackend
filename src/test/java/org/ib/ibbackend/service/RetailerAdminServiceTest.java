@@ -168,9 +168,8 @@ class RetailerAdminServiceTest {
     }
 
     @Test
-    void shouldToggleUserStatusForAdminUsersUsingDisabledFlag() {
+    void shouldUpdateBothUserStatusFieldsForAdmin() {
         UserRepository userRepository = mock(UserRepository.class);
-        RetailerAdminService retailerAdminService = mock(RetailerAdminService.class);
         AuditLogRepository auditLogRepository = mock(AuditLogRepository.class);
 
         User actor = new User();
@@ -183,6 +182,7 @@ class RetailerAdminServiceTest {
         target.setEmail("member@example.com");
         target.setRole("owner");
         target.setDisabled(true);
+        target.setApprovalStatus(RetailerStatus.PENDING_APPROVAL);
 
         when(userRepository.findByEmail("admin@example.com")).thenReturn(Optional.of(actor));
         when(userRepository.findById(42L)).thenReturn(Optional.of(target));
@@ -191,13 +191,23 @@ class RetailerAdminServiceTest {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken("admin@example.com", "secret"));
 
-        RetailerAdminController controller = new RetailerAdminController(retailerAdminService, userRepository, auditLogRepository);
-        ResponseEntity<Map<String, Object>> response = controller.updateUserStatus(42L, Map.of("disabled", false));
+        RetailerAdminController controller = new RetailerAdminController(
+                new RetailerAdminService(userRepository), userRepository, auditLogRepository);
+        ResponseEntity<Map<String, Object>> response = controller.updateUserStatus(42L, Map.of("status", "Active"));
 
         assertEquals(200, response.getStatusCode().value());
         assertTrue(response.getBody().containsKey("success"));
         assertEquals("ACTIVE", response.getBody().get("status"));
         assertFalse(target.isDisabled());
+        assertEquals(RetailerStatus.APPROVED, target.getApprovalStatus());
+
+        ResponseEntity<Map<String, Object>> disabledResponse =
+                controller.updateUserStatus(42L, Map.of("status", "DISABLED"));
+        assertEquals(200, disabledResponse.getStatusCode().value());
+        assertEquals("DISABLED", disabledResponse.getBody().get("status"));
+        assertTrue(target.isDisabled());
+        assertEquals(RetailerStatus.DISABLED, target.getApprovalStatus());
+        verify(userRepository, org.mockito.Mockito.times(2)).save(target);
         SecurityContextHolder.clearContext();
     }
 

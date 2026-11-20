@@ -253,31 +253,47 @@ public class RetailerAdminController {
     public ResponseEntity<Map<String, Object>> updateUserStatus(@PathVariable Long id,
                                                                @RequestBody Map<String, Object> payload) {
         User actor = requireAdmin();
-        User target = userRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
-
-        if (actor.getId().equals(target.getId())) {
+        if (actor.getId() != null && actor.getId().equals(id)) {
             throw new AccessDeniedException("Self-status changes are blocked");
         }
 
         boolean disabled;
         if (payload != null && payload.containsKey("disabled")) {
-            disabled = Boolean.TRUE.equals(payload.get("disabled"));
+            Object value = payload.get("disabled");
+            if (!(value instanceof Boolean)) {
+                return ResponseEntity.badRequest().body(
+                        Map.of("success", false, "message", "disabled must be a boolean"));
+            }
+            disabled = (Boolean) value;
         } else if (payload != null && payload.containsKey("enabled")) {
-            disabled = !Boolean.TRUE.equals(payload.get("enabled"));
+            Object value = payload.get("enabled");
+            if (!(value instanceof Boolean)) {
+                return ResponseEntity.badRequest().body(
+                        Map.of("success", false, "message", "enabled must be a boolean"));
+            }
+            disabled = !(Boolean) value;
         } else if (payload != null && payload.containsKey("status")) {
             String status = String.valueOf(payload.get("status")).trim();
             String normalized = status.toUpperCase(Locale.ROOT);
-            disabled = "DISABLED".equals(normalized)
-                    || "INACTIVE".equals(normalized)
-                    || "DEACTIVATED".equals(normalized)
-                    || "BLOCKED".equals(normalized);
+            if ("ACTIVE".equals(normalized) || "APPROVED".equals(normalized)) {
+                disabled = false;
+            } else if ("DISABLED".equals(normalized) || "INACTIVE".equals(normalized)
+                    || "DEACTIVATED".equals(normalized) || "BLOCKED".equals(normalized)
+                    || "SUSPENDED".equals(normalized)) {
+                disabled = true;
+            } else {
+                return ResponseEntity.badRequest().body(
+                        Map.of("success", false, "message", "Unsupported user status"));
+            }
         } else {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", "status or disabled flag is required"));
         }
 
-        target.setDisabled(disabled);
-        User saved = userRepository.save(target);
+        Object noteValue = payload != null ? payload.get("note") : null;
+        String note = noteValue instanceof String ? (String) noteValue : null;
+        User saved = disabled
+                ? retailerAdminService.disableRetailer(id, note, actor.getEmail())
+                : retailerAdminService.enableRetailer(id, note, actor.getEmail());
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("success", true);

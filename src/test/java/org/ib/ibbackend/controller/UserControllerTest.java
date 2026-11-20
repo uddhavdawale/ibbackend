@@ -1,6 +1,7 @@
 package org.ib.ibbackend.controller;
 
 import org.ib.ibbackend.entity.RefreshToken;
+import org.ib.ibbackend.entity.RetailerStatus;
 import org.ib.ibbackend.entity.Tenant;
 import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.repository.UserRepository;
@@ -236,6 +237,79 @@ class UserControllerTest {
         assertFalse((Boolean) response.getBody().get("success"));
         verify(userRepository, never()).findByIdAndTenant_Id(any(), anyInt());
         verify(refreshTokenService, never()).revokeAllActiveTokensForUser(any(User.class));
+    }
+
+    @Test
+    void updateUserStatus_shouldSynchronizeDisabledAndApprovalStatus() {
+        UserRepository userRepository = mock(UserRepository.class);
+        UserController controller = new UserController(userRepository);
+
+        User admin = new User();
+        admin.setId(30L);
+        admin.setEmail("platform-admin@example.com");
+        admin.setRole("system_admin");
+
+        User target = new User();
+        target.setId(31L);
+        target.setEmail("retailer@example.com");
+        target.setRole("retailer");
+
+        when(userRepository.findByEmail("platform-admin@example.com")).thenReturn(Optional.of(admin));
+        when(userRepository.findById(31L)).thenReturn(Optional.of(target));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("platform-admin@example.com", null)
+        );
+
+        ResponseEntity<Map<String, Object>> disabledResponse =
+                controller.updateUserStatus(31L, Map.of("disabled", true));
+
+        assertEquals(200, disabledResponse.getStatusCode().value());
+        assertTrue(target.isDisabled());
+        assertEquals(RetailerStatus.DISABLED, target.getApprovalStatus());
+
+        ResponseEntity<Map<String, Object>> enabledResponse =
+                controller.updateUserStatus(31L, Map.of("disabled", false));
+
+        assertEquals(200, enabledResponse.getStatusCode().value());
+        assertFalse(target.isDisabled());
+        assertEquals(RetailerStatus.APPROVED, target.getApprovalStatus());
+        assertEquals(false, ((Map<String, Object>) enabledResponse.getBody().get("user")).get("disabled"));
+        verify(userRepository, org.mockito.Mockito.times(2)).save(target);
+    }
+
+    @Test
+    void updateUserStatus_shouldRejectInvalidDisabledValueAndPreservePendingApproval() {
+        UserRepository userRepository = mock(UserRepository.class);
+        UserController controller = new UserController(userRepository);
+
+        User admin = new User();
+        admin.setId(40L);
+        admin.setEmail("platform-admin@example.com");
+        admin.setRole("system_admin");
+
+        User target = new User();
+        target.setId(41L);
+        target.setEmail("pending@example.com");
+        target.setApprovalStatus(RetailerStatus.PENDING_APPROVAL);
+        target.setDisabled(true);
+
+        when(userRepository.findByEmail("platform-admin@example.com")).thenReturn(Optional.of(admin));
+        when(userRepository.findById(41L)).thenReturn(Optional.of(target));
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("platform-admin@example.com", null)
+        );
+
+        ResponseEntity<Map<String, Object>> invalidResponse =
+                controller.updateUserStatus(41L, Map.of("disabled", "false"));
+        ResponseEntity<Map<String, Object>> pendingResponse =
+                controller.updateUserStatus(41L, Map.of("disabled", false));
+
+        assertEquals(400, invalidResponse.getStatusCode().value());
+        assertEquals(409, pendingResponse.getStatusCode().value());
+        assertTrue(target.isDisabled());
+        assertEquals(RetailerStatus.PENDING_APPROVAL, target.getApprovalStatus());
+        verify(userRepository, never()).save(any(User.class));
     }
 
     @Test

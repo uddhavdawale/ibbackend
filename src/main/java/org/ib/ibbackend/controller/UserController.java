@@ -1,6 +1,7 @@
 package org.ib.ibbackend.controller;
 
 import org.ib.ibbackend.dto.UserRenameRequest;
+import org.ib.ibbackend.entity.RetailerStatus;
 import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.security.UserRolePolicy;
@@ -209,7 +210,11 @@ public class UserController {
         if (body == null || !body.containsKey("disabled")) {
             return ResponseEntity.badRequest().body(errorWithCode("disabled flag is required", "VALIDATION_ERROR"));
         }
-        boolean disabled = body != null && Boolean.TRUE.equals(body.get("disabled"));
+        Object disabledValue = body.get("disabled");
+        if (!(disabledValue instanceof Boolean)) {
+            return ResponseEntity.badRequest().body(errorWithCode("disabled must be a boolean", "VALIDATION_ERROR"));
+        }
+        boolean disabled = (Boolean) disabledValue;
         return setUserDisabled(userId, disabled);
     }
 
@@ -355,7 +360,20 @@ public class UserController {
         }
 
         User targetUser = resolveTenantScopedUser(userId, currentUser);
+        RetailerStatus approvalStatus = targetUser.getApprovalStatus();
+        if (!disabled && approvalStatus != RetailerStatus.APPROVED
+                && approvalStatus != RetailerStatus.DISABLED) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(errorWithCode("User cannot be enabled while approval status is " + approvalStatus,
+                            "INVALID_STATUS_TRANSITION"));
+        }
+
         targetUser.setDisabled(disabled);
+        if (disabled && approvalStatus == RetailerStatus.APPROVED) {
+            targetUser.setApprovalStatus(RetailerStatus.DISABLED);
+        } else if (!disabled) {
+            targetUser.setApprovalStatus(RetailerStatus.APPROVED);
+        }
         userRepository.save(targetUser);
 
         if (refreshTokenService != null) {
