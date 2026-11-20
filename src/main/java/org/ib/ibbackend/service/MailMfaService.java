@@ -60,6 +60,28 @@ public class MailMfaService {
         return isBrevoApiReady() || isSmtpReady();
     }
 
+    public String getUnavailableReason() {
+        if (!isEnabled()) {
+            return "APP_MFA_MAIL_ENABLED is false";
+        }
+        if ("brevo-api".equalsIgnoreCase(mailProvider)) {
+            return isBrevoApiReady() ? null : "BREVO_API_KEY is missing";
+        }
+        if ("smtp".equalsIgnoreCase(mailProvider)) {
+            if (smtpPassword == null || smtpPassword.isBlank()) {
+                return "SMTP_PASSWORD is missing";
+            }
+            return null;
+        }
+        if (isBrevoApiReady()) {
+            return null;
+        }
+        if (smtpPassword == null || smtpPassword.isBlank()) {
+            return "Neither BREVO_API_KEY nor SMTP_PASSWORD is configured";
+        }
+        return null;
+    }
+
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setBrevoEmailService(BrevoEmailService brevoEmailService) {
         this.brevoEmailService = brevoEmailService;

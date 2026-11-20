@@ -83,8 +83,9 @@ public class MfaController {
                     Map.of("success", false, "message", "A valid MFA challenge is required."));
         }
         if (!mailMfaService.isReady()) {
-            log.warn("MFA code send unavailable: mail delivery is not configured");
-            auditFailure("MFA_CHALLENGE", "N/A", "Mail MFA is disabled");
+            String reason = mailMfaService.getUnavailableReason();
+            log.warn("MFA code send unavailable: {}", reason);
+            auditFailure("MFA_CHALLENGE", "N/A", "Mail MFA unavailable: " + reason);
             return noStore(HttpStatus.FORBIDDEN,
                     Map.of("success", false, "message", "MFA verification is unavailable."));
         }

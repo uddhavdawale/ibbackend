@@ -121,8 +121,10 @@ public class LoginController {
 
         if (mailMfaEnabled) {
             if (!mailMfaService.isReady()) {
-                log.warn("MFA challenge unavailable: mail delivery is not configured");
-                auditFailure("MFA_CHALLENGE", String.valueOf(user.getId()), "Mail delivery is not configured");
+                String reason = mailMfaService.getUnavailableReason();
+                log.warn("MFA challenge unavailable: {}", reason);
+                auditFailure("MFA_CHALLENGE", String.valueOf(user.getId()),
+                        "Mail delivery is not configured: " + reason);
                 return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                         .body(new LoginResponse(false, "MFA verification is temporarily unavailable."));
             }
@@ -149,8 +151,9 @@ public class LoginController {
                                 "expiresAt", challenge.expiresAt().atOffset(java.time.ZoneOffset.UTC).toInstant().toString()
                         )));
             } catch (IllegalArgumentException | IllegalStateException ex) {
-                log.warn("Email MFA challenge could not be created");
-                auditFailure("MFA_CHALLENGE", String.valueOf(user.getId()), "MFA challenge could not be created");
+                log.warn("Email MFA challenge could not be created: {}", ex.getMessage());
+                auditFailure("MFA_CHALLENGE", String.valueOf(user.getId()),
+                        "MFA challenge could not be created: " + ex.getMessage());
                 return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                         .body(new LoginResponse(false, "MFA verification is temporarily unavailable."));
             }

@@ -73,6 +73,8 @@ class LoginControllerMfaContractTest {
         assertThat(challengeResponse.getMfaChallenge())
                 .containsEntry("challengeId", "opaque-challenge")
                 .containsEntry("maskedDestination", "o***@example.com");
+        assertThat(challengeResponse.getChallengeId()).isEqualTo("opaque-challenge");
+        assertThat(challengeResponse.getMaskedDestination()).isEqualTo("o***@example.com");
         assertThat(response.getHeaders().getFirst("Set-Cookie"))
                 .contains("mfaPreAuth=preauth-secret")
                 .contains("HttpOnly")
