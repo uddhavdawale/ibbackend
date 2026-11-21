@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
@@ -42,7 +43,7 @@ class UserControllerTest {
     }
 
     @Test
-    void getCurrentUserCompatibility_shouldReturnSamePayloadAsMeEndpoint() {
+    void getCurrentUser_shouldReturnAuthenticatedProfile() {
         UserRepository userRepository = mock(UserRepository.class);
         UserController controller = new UserController(userRepository);
 
@@ -62,7 +63,7 @@ class UserControllerTest {
                 new UsernamePasswordAuthenticationToken("owner@example.com", null)
         );
 
-        ResponseEntity<Map<String, Object>> response = controller.getCurrentUserCompatibility();
+        ResponseEntity<Map<String, Object>> response = controller.getCurrentUser();
 
         assertEquals(200, response.getStatusCode().value());
         assertNotNull(response.getBody());
@@ -77,11 +78,11 @@ class UserControllerTest {
     }
 
     @Test
-    void getCurrentUserCompatibility_shouldRejectAnonymousContext() {
+    void getCurrentUser_shouldRejectAnonymousContext() {
         UserRepository userRepository = mock(UserRepository.class);
         UserController controller = new UserController(userRepository);
 
-        assertThrows(AccessDeniedException.class, controller::getCurrentUserCompatibility);
+        assertThrows(AccessDeniedException.class, controller::getCurrentUser);
     }
 
     @Test
@@ -106,7 +107,7 @@ class UserControllerTest {
         child.setTenant(adminTenant);
 
         when(userRepository.findByEmail("admin@example.com")).thenReturn(Optional.of(admin));
-        when(userRepository.findTenantUsersForManagement(eq("staff"), eq(false), any()))
+        when(userRepository.findTenantUsersForManagement1(eq(77), eq("staff"), eq(false), any()))
             .thenReturn(new PageImpl<>(List.of(child), PageRequest.of(0, 20), 1));
 
         SecurityContextHolder.getContext().setAuthentication(
@@ -127,6 +128,49 @@ class UserControllerTest {
         assertEquals(2L, items.get(0).get("id"));
         assertEquals(false, items.get(0).get("disabled"));
         assertEquals("ACTIVE", items.get(0).get("status"));
+        verify(userRepository).findTenantUsersForManagement1(eq(77), eq("staff"), eq(false), any());
+        verify(userRepository, never()).findTenantUsersForManagement(any(), anyBoolean(), any());
+    }
+
+    @Test
+    void getExistingUsers_shouldAllowStoreAdminToViewOwnTenantUsers() {
+        UserRepository userRepository = mock(UserRepository.class);
+        UserController controller = new UserController(userRepository);
+
+        Tenant tenant = new Tenant();
+        tenant.setId(88);
+
+        User storeAdmin = new User();
+        storeAdmin.setId(10L);
+        storeAdmin.setEmail("store-admin@example.com");
+        storeAdmin.setRole("store_admin");
+        storeAdmin.setTenant(tenant);
+
+        User staff = new User();
+        staff.setId(11L);
+        staff.setUsername("cashier88");
+        staff.setEmail("cashier88@example.com");
+        staff.setOwnerName("Store Cashier");
+        staff.setRole("billing_manager");
+        staff.setTenant(tenant);
+
+        when(userRepository.findByEmail("store-admin@example.com")).thenReturn(Optional.of(storeAdmin));
+        when(userRepository.findTenantUsersForManagement1(eq(88), eq("cashier"), eq(false), any()))
+                .thenReturn(new PageImpl<>(List.of(staff), PageRequest.of(0, 20), 1));
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("store-admin@example.com", null)
+        );
+
+        ResponseEntity<Map<String, Object>> response = controller.getExistingUsers(0, 20, "cashier", false);
+
+        assertEquals(200, response.getStatusCode().value());
+        assertNotNull(response.getBody());
+        assertEquals(88, response.getBody().get("tenantId"));
+        List<Map<String, Object>> items = (List<Map<String, Object>>) response.getBody().get("items");
+        assertEquals(1, items.size());
+        assertEquals(11L, items.get(0).get("id"));
+        verify(userRepository).findTenantUsersForManagement1(eq(88), eq("cashier"), eq(false), any());
     }
 
     @Test

@@ -75,12 +75,6 @@ public class UserController {
         this(userRepository, refreshTokenService, mailMfaService, auditLogService, null);
     }
 
-    @GetMapping
-    public ResponseEntity<Map<String, Object>> getCurrentUserCompatibility() {
-        // Compatibility route for clients still calling /api/users.
-        return getCurrentUser();
-    }
-
     @GetMapping("/me")
     public ResponseEntity<Map<String, Object>> getCurrentUser() {
         User user = resolveCurrentUser();
@@ -105,13 +99,13 @@ public class UserController {
         return ResponseEntity.ok(response);
     }
 
-    @GetMapping("/existing")
+    @GetMapping({"", "/existing"})
     public ResponseEntity<Map<String, Object>> getExistingUsers(
             @RequestParam(name = "page", defaultValue = "0") int page,
             @RequestParam(name = "size", defaultValue = "20") int size,
             @RequestParam(name = "search", required = false) String search,
             @RequestParam(name = "includeDisabled", defaultValue = "false") boolean includeDisabled) {
-        User currentUser = requireAdminUser();
+        User currentUser = requireUserListAccess();
 
         int safePage = Math.max(0, page);
         int safeSize = Math.max(1, Math.min(MAX_PAGE_SIZE, size <= 0 ? DEFAULT_PAGE_SIZE : size));
@@ -127,8 +121,8 @@ public class UserController {
             if (tenantId == null) {
                 throw new AccessDeniedException("Current user has no tenant");
             }
-            userPage = userRepository.findTenantUsersForManagement(
-
+            userPage = userRepository.findTenantUsersForManagement1(
+                    tenantId,
                     normalizedSearch,
                     includeDisabled,
                     pageRequest
@@ -307,6 +301,18 @@ public class UserController {
         User currentUser = resolveCurrentUser();
         if (!UserRolePolicy.canManageUsers(currentUser.getRole())) {
             throw new AccessDeniedException("Only system admins can manage users");
+        }
+        if (currentUser.getTenant() == null && !UserRolePolicy.isSystemAdmin(currentUser.getRole())) {
+            throw new AccessDeniedException("Current user has no tenant");
+        }
+        return currentUser;
+    }
+
+    private User requireUserListAccess() {
+        User currentUser = resolveCurrentUser();
+        if (!UserRolePolicy.canManageUsers(currentUser.getRole())
+                && !UserRolePolicy.isStoreAdmin(currentUser.getRole())) {
+            throw new AccessDeniedException("User is not allowed to view store users");
         }
         if (currentUser.getTenant() == null && !UserRolePolicy.isSystemAdmin(currentUser.getRole())) {
             throw new AccessDeniedException("Current user has no tenant");

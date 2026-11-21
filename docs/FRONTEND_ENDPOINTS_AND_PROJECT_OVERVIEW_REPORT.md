@@ -155,7 +155,12 @@ Purpose: Verify email OTP and finalize successful login.
 ## 4.2 User and Shop Profile APIs
 
 ### GET /api/users
-Purpose: Compatibility entry point for current user details.
+Purpose: List users for the authenticated admin's tenant.
+Query params:
+- `page` (default 0)
+- `size` (default 20)
+- `search` (optional)
+- `includeDisabled` (default false)
 
 ### GET /api/users/me
 Purpose: Get current authenticated user profile.
@@ -174,7 +179,7 @@ Response includes:
 - tenantId
 
 ### GET /api/users/existing
-Purpose: List tenant users for admin management.
+Purpose: Compatibility alias for the tenant user list at `/api/users`.
 Query params:
 - `page` (default 0)
 - `size` (default 20)
