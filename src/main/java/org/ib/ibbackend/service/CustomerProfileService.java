@@ -128,6 +128,58 @@ public class CustomerProfileService {
         return customerProfileRepository.save(customer);
     }
 
+    @Transactional
+    public void refreshLedgerForInvoice(Invoice invoice) {
+        if (invoice == null) {
+            return;
+        }
+        Long tenantId = invoice.getTenant() != null
+                ? (long) invoice.getTenant().getId() : TenantContext.getCurrentTenant();
+        refreshLedger(tenantId, invoice.getCustomerName(), invoice.getCustomerPhone());
+    }
+
+    @Transactional
+    public void refreshLedgerForInvoice(NonGstInvoice invoice) {
+        if (invoice == null) {
+            return;
+        }
+        Long tenantId = invoice.getTenant() != null
+                ? (long) invoice.getTenant().getId() : TenantContext.getCurrentTenant();
+        refreshLedger(tenantId, invoice.getCustomerName(), invoice.getCustomerPhone());
+    }
+
+    private void refreshLedger(Long tenantId, String customerName, String phone) {
+        if (tenantId == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+        String normalizedPhone = normalizePhone(phone);
+        String normalizedName = normalizeCustomerName(customerName);
+        if ((normalizedPhone == null || normalizedPhone.isBlank())
+                && (normalizedName == null || normalizedName.isBlank())) {
+            return;
+        }
+
+        Optional<CustomerProfile> existingCustomer = normalizedPhone == null
+                ? Optional.empty()
+                : customerProfileRepository.findByTenantIdAndPhoneForUpdate(tenantId, normalizedPhone);
+        if (existingCustomer.isEmpty() && normalizedName != null) {
+            existingCustomer = customerProfileRepository.findByTenantIdAndCustomerNameForUpdate(
+                    tenantId, normalizedName);
+        }
+        if (existingCustomer.isEmpty()) {
+            return;
+        }
+        CustomerProfile customer = existingCustomer.get();
+        BigDecimal gstDue = normalizedPhone != null
+                ? invoiceRepository.getOutstandingByTenantAndPhone(tenantId, normalizedPhone, normalizedName)
+                : invoiceRepository.getOutstandingByTenantAndCustomerName(tenantId, normalizedName);
+        BigDecimal nonGstDue = normalizedPhone != null
+                ? nonGstInvoiceRepository.getOutstandingByTenantAndPhone(tenantId, normalizedPhone, normalizedName)
+                : nonGstInvoiceRepository.getOutstandingByTenantAndCustomerName(tenantId, normalizedName);
+        customer.applyOutstandingAmount(gstDue.add(nonGstDue));
+        customerProfileRepository.save(customer);
+    }
+
     public List<CustomerProfile> listByTenant(Long tenantId) {
         if (tenantId == null) {
             tenantId = TenantContext.getCurrentTenant();

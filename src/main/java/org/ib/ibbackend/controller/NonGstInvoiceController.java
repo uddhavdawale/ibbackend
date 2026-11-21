@@ -41,6 +41,11 @@ public class NonGstInvoiceController {
         return ResponseEntity.ok(nonGstInvoiceService.listNonGstInvoices(page, size, search, billType));
     }
 
+    @GetMapping("/{id}")
+    public ResponseEntity<Map<String, Object>> getNonGstInvoice(@PathVariable Long id) {
+        return ResponseEntity.ok(nonGstInvoiceService.getNonGstInvoice(id));
+    }
+
     @PostMapping("/{id}/cancel")
     public ResponseEntity<Map<String, Object>> cancelSellOrder(@PathVariable Long id) {
         return ResponseEntity.ok(nonGstInvoiceService.cancelNonGstInvoice(id));

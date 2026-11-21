@@ -8,6 +8,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 
@@ -32,7 +33,7 @@ class PaymentCollectionControllerTest {
     @Test
     void paymentsReturnsThePaymentReportContractWithDefaultDates() throws Exception {
         TenantContext.setCurrentTenant(7L);
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
         Map<String, Object> response = Map.of(
                 "from", today.toString(),
                 "to", today.toString(),

@@ -100,4 +100,25 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     @Query("SELECT new org.ib.ibbackend.dto.CustomerInvoiceRecord(i.id, i.invoiceNo, i.customerName, i.customerPhone, i.customerEmail, i.grandTotal, i.paidAmount, i.date) " +
             "FROM Invoice i WHERE i.tenant.id = :tenantId")
     List<CustomerInvoiceRecord> findCustomerRecordsByTenantId(@Param("tenantId") Long tenantId);
+
+    @Query(value = """
+            SELECT COALESCE(SUM(GREATEST(COALESCE(i.grand_total, 0) - COALESCE(i.paid_amount, 0), 0)), 0)
+            FROM invoices i
+            WHERE i.tenant_id = :tenantId
+              AND (NULLIF(BTRIM(i.customer_phone), '') = :phone
+                   OR (NULLIF(BTRIM(i.customer_phone), '') IS NULL
+                       AND NULLIF(BTRIM(i.customer_name), '') = :customerName))
+            """, nativeQuery = true)
+    BigDecimal getOutstandingByTenantAndPhone(@Param("tenantId") Long tenantId,
+                                              @Param("phone") String phone,
+                                              @Param("customerName") String customerName);
+
+    @Query(value = """
+            SELECT COALESCE(SUM(GREATEST(COALESCE(i.grand_total, 0) - COALESCE(i.paid_amount, 0), 0)), 0)
+            FROM invoices i
+            WHERE i.tenant_id = :tenantId
+              AND NULLIF(BTRIM(i.customer_name), '') = :customerName
+            """, nativeQuery = true)
+    BigDecimal getOutstandingByTenantAndCustomerName(@Param("tenantId") Long tenantId,
+                                                     @Param("customerName") String customerName);
 }

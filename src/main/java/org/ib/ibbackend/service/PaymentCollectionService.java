@@ -49,6 +49,7 @@ public class PaymentCollectionService {
     private final InvoiceRepository invoiceRepository;
     private final NonGstInvoiceRepository nonGstInvoiceRepository;
     private final UserRepository userRepository;
+    private final CustomerProfileService customerProfileService;
     private final CashReconciliationRepository reconciliationRepository;
     private final CashHandoverRepository handoverRepository;
     private final AuditLogService auditLogService;
@@ -58,6 +59,7 @@ public class PaymentCollectionService {
             InvoiceRepository invoiceRepository,
             NonGstInvoiceRepository nonGstInvoiceRepository,
             UserRepository userRepository,
+            CustomerProfileService customerProfileService,
             CashReconciliationRepository reconciliationRepository,
             CashHandoverRepository handoverRepository,
             AuditLogService auditLogService) {
@@ -65,6 +67,7 @@ public class PaymentCollectionService {
         this.invoiceRepository = invoiceRepository;
         this.nonGstInvoiceRepository = nonGstInvoiceRepository;
         this.userRepository = userRepository;
+        this.customerProfileService = customerProfileService;
         this.reconciliationRepository = reconciliationRepository;
         this.handoverRepository = handoverRepository;
         this.auditLogService = auditLogService;
@@ -82,7 +85,7 @@ public class PaymentCollectionService {
         Invoice invoice = invoiceRepository.findByIdAndTenantIdForUpdate(invoiceId, tenantId.longValue())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Invoice not found"));
         ensureInvoiceCollectible(invoice.getStatus() == Invoice.InvoiceStatus.CANCELLED);
-        return collect(invoice, null, tenantId, collector, request);
+        return toReceiptResponse(collect(invoice, null, tenantId, collector, request));
     }
 
     @Transactional
@@ -92,7 +95,7 @@ public class PaymentCollectionService {
         NonGstInvoice invoice = nonGstInvoiceRepository.findByIdAndTenantIdForUpdate(invoiceId, tenantId.longValue())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Invoice not found"));
         ensureInvoiceCollectible("CANCELLED".equalsIgnoreCase(invoice.getStatus()));
-        return collect(null, invoice, tenantId, collector, request);
+        return toReceiptResponse(collect(null, invoice, tenantId, collector, request));
     }
 
     @Transactional
@@ -169,6 +172,8 @@ public class PaymentCollectionService {
                         : newPaid.signum() > 0 ? Invoice.PaymentStatus.PARTIAL : Invoice.PaymentStatus.PENDING);
             }
             invoiceRepository.save(invoice);
+            invoiceRepository.flush();
+            customerProfileService.refreshLedgerForInvoice(invoice);
         } else {
             BigDecimal newPaid = nonGstInvoice.getPaidAmount().subtract(amount).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
             nonGstInvoice.setPaidAmount(newPaid);
@@ -179,6 +184,8 @@ public class PaymentCollectionService {
                 nonGstInvoice.setStatus(newStatus);
             }
             nonGstInvoiceRepository.save(nonGstInvoice);
+            nonGstInvoiceRepository.flush();
+            customerProfileService.refreshLedgerForInvoice(nonGstInvoice);
         }
 
         auditLogService.success("PAYMENT_REFUND", refund.getReceiptNo(),
@@ -349,12 +356,16 @@ public class PaymentCollectionService {
             invoice.setPaymentStatus(newPaidAmount.compareTo(total) >= 0
                     ? Invoice.PaymentStatus.PAID : Invoice.PaymentStatus.PARTIAL);
             invoiceRepository.save(invoice);
+            invoiceRepository.flush();
+            customerProfileService.refreshLedgerForInvoice(invoice);
         } else {
             nonGstInvoice.setPaidAmount(newPaidAmount);
             String newStatus = newPaidAmount.compareTo(total) >= 0 ? "PAID" : "PARTIAL";
             nonGstInvoice.setPaymentStatus(newStatus);
             nonGstInvoice.setStatus(newStatus);
             nonGstInvoiceRepository.save(nonGstInvoice);
+            nonGstInvoiceRepository.flush();
+            customerProfileService.refreshLedgerForInvoice(nonGstInvoice);
         }
         auditLogService.success("PAYMENT_RECEIVED", record.getReceiptNo(),
                 "Payment collected against invoice " + invoiceNumber(invoice, nonGstInvoice));
@@ -370,6 +381,7 @@ public class PaymentCollectionService {
         record.setCollector(collector);
         record.setAmount(money(request.getAmount()));
         record.setMethod(normalizeMethod(request.getMethod()));
+        record.setStatus("RECEIVED");
         record.setReferenceNo(sanitize(request.getReferenceNo(), 255));
         record.setIdempotencyKey(request.getIdempotencyKey().trim());
         record.setReceiptNo("RCPT-" + UUID.randomUUID().toString().replace("-", "").toUpperCase(Locale.ROOT));
@@ -565,6 +577,21 @@ public class PaymentCollectionService {
         view.put("source", record.getSource());
         view.put("collectedAt", record.getCollectedAt());
         return view;
+    }
+
+    private Map<String, Object> toReceiptResponse(Map<String, Object> paymentView) {
+        Map<String, Object> payment = new HashMap<>();
+        payment.put("id", paymentView.get("paymentId"));
+        payment.put("receiptNo", paymentView.get("receiptNo"));
+        payment.put("amount", paymentView.get("amount"));
+        payment.put("method", paymentView.get("method"));
+        payment.put("referenceNo", paymentView.get("referenceNo"));
+        payment.put("collectedByName", paymentView.get("collectorName"));
+        payment.put("collectedAt", paymentView.get("collectedAt"));
+
+        Map<String, Object> response = new HashMap<>(paymentView);
+        response.put("payment", payment);
+        return response;
     }
 
     private Map<String, Object> toReconciliationView(CashReconciliation record) {

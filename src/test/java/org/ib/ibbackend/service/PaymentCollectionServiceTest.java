@@ -5,6 +5,7 @@ import org.ib.ibbackend.dto.CollectPaymentRequest;
 import org.ib.ibbackend.dto.RefundPaymentRequest;
 import org.ib.ibbackend.entity.CashReconciliation;
 import org.ib.ibbackend.entity.Invoice;
+import org.ib.ibbackend.entity.NonGstInvoice;
 import org.ib.ibbackend.entity.PaymentRecord;
 import org.ib.ibbackend.entity.Tenant;
 import org.ib.ibbackend.entity.User;
@@ -30,10 +31,12 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -46,11 +49,12 @@ class PaymentCollectionServiceTest {
     private final InvoiceRepository invoiceRepository = mock(InvoiceRepository.class);
     private final NonGstInvoiceRepository nonGstInvoiceRepository = mock(NonGstInvoiceRepository.class);
     private final UserRepository userRepository = mock(UserRepository.class);
+    private final CustomerProfileService customerProfileService = mock(CustomerProfileService.class);
     private final CashReconciliationRepository reconciliationRepository = mock(CashReconciliationRepository.class);
     private final CashHandoverRepository handoverRepository = mock(CashHandoverRepository.class);
     private final AuditLogService auditLogService = mock(AuditLogService.class);
     private final PaymentCollectionService service = new PaymentCollectionService(
-            paymentRepository, invoiceRepository, nonGstInvoiceRepository, userRepository,
+            paymentRepository, invoiceRepository, nonGstInvoiceRepository, userRepository, customerProfileService,
             reconciliationRepository, handoverRepository, auditLogService);
 
     @AfterEach
@@ -74,8 +78,16 @@ class PaymentCollectionServiceTest {
         assertEquals(Invoice.InvoiceStatus.PENDING, invoice.getStatus());
         assertEquals(Invoice.PaymentStatus.PARTIAL, invoice.getPaymentStatus());
         assertEquals("CASH", result.get("method"));
+        assertEquals("RECEIVED", result.get("status"));
         assertEquals("RCPT-", String.valueOf(result.get("receiptNo")).substring(0, 5));
+        assertTrue(result.get("payment") instanceof Map<?, ?>);
+        Map<?, ?> receipt = (Map<?, ?>) result.get("payment");
+        assertEquals(new BigDecimal("30.00"), receipt.get("amount"));
+        assertEquals("CASH", receipt.get("method"));
+        assertEquals("RCPT-", String.valueOf(receipt.get("receiptNo")).substring(0, 5));
+        assertTrue(receipt.containsKey("collectedByName"));
         verify(invoiceRepository).save(invoice);
+        verify(customerProfileService).refreshLedgerForInvoice(invoice);
         verify(auditLogService).success(any(), any(), any());
     }
 
@@ -99,6 +111,7 @@ class PaymentCollectionServiceTest {
         assertEquals(new BigDecimal("20.00"), invoice.getPaidAmount());
         verify(paymentRepository, never()).save(any(PaymentRecord.class));
         verify(invoiceRepository, never()).save(invoice);
+        verify(customerProfileService, never()).refreshLedgerForInvoice(invoice);
     }
 
     @Test
@@ -113,6 +126,30 @@ class PaymentCollectionServiceTest {
                 () -> service.collectGstPayment(4L, request("30.00", "request-1")));
         verify(paymentRepository, never()).save(any(PaymentRecord.class));
         verify(invoiceRepository, never()).save(invoice);
+        verify(customerProfileService, never()).refreshLedgerForInvoice(invoice);
+    }
+
+    @Test
+    void refreshesCustomerLedgerWhenCollectingNonGstInvoicePayment() {
+        User collector = collector(7, "store_admin");
+        Tenant tenant = collector.getTenant();
+        NonGstInvoice invoice = new NonGstInvoice();
+        invoice.setId(4L);
+        invoice.setInvoiceNo("NG-4");
+        invoice.setTenant(tenant);
+        invoice.setGrandTotal(new BigDecimal("100.00"));
+        invoice.setPaidAmount(new BigDecimal("20.00"));
+        invoice.setStatus("PARTIAL");
+        authenticate(collector);
+        when(nonGstInvoiceRepository.findByIdAndTenantIdForUpdate(4L, 7L)).thenReturn(Optional.of(invoice));
+        when(paymentRepository.findByTenant_IdAndIdempotencyKey(7, "request-1")).thenReturn(Optional.empty());
+        when(paymentRepository.save(any(PaymentRecord.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.collectNonGstPayment(4L, request("30.00", "request-1"));
+
+        assertEquals(new BigDecimal("50.00"), invoice.getPaidAmount());
+        verify(nonGstInvoiceRepository).save(invoice);
+        verify(customerProfileService).refreshLedgerForInvoice(invoice);
     }
 
     @Test
@@ -244,6 +281,36 @@ class PaymentCollectionServiceTest {
         verify(paymentRepository).summarize(
                 eq(7), any(Instant.class), any(Instant.class), eq(viewer.getId()),
                 eq("CASH"), eq(99L));
+    }
+
+    @Test
+    void paymentReportReturnsCollectedAmountFromPaymentRecord() {
+        User owner = collector(7, "store_admin");
+        authenticate(owner);
+        LocalDate reportDate = LocalDate.of(2026, 11, 21);
+        PaymentReportRow row = mock(PaymentReportRow.class);
+        when(row.getAmount()).thenReturn(new BigDecimal("2.75"));
+        when(row.getPaymentId()).thenReturn(101L);
+        when(row.getMethod()).thenReturn("CASH");
+        when(row.getStatus()).thenReturn("RECEIVED");
+        when(row.getSource()).thenReturn("COLLECTION");
+        when(paymentRepository.findReportRows(eq(7), any(Instant.class), any(Instant.class),
+                eq(null), eq("CASH"), eq(null), any()))
+                .thenReturn(new PageImpl<>(List.of(row), PageRequest.of(0, 50), 1));
+        when(paymentRepository.summarize(eq(7), any(Instant.class), any(Instant.class),
+                eq(null), eq("CASH"), eq(null)))
+                .thenReturn(new Object[]{new BigDecimal("2.75"), 1L, new BigDecimal("2.75"),
+                        BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO});
+        when(invoiceRepository.getPendingAmountByTenantId(7L)).thenReturn(BigDecimal.ZERO);
+        when(nonGstInvoiceRepository.getPendingAmountByTenantId(7L)).thenReturn(BigDecimal.ZERO);
+
+        var result = service.getReport(reportDate, reportDate, null, "CASH", null, 0, 50);
+        Map<?, ?> summary = (Map<?, ?>) result.get("summary");
+        List<?> payments = (List<?>) result.get("payments");
+
+        assertEquals(new BigDecimal("2.75"), summary.get("totalCollected"));
+        assertEquals(new BigDecimal("2.75"), summary.get("cashCollected"));
+        assertEquals(new BigDecimal("2.75"), ((Map<?, ?>) payments.get(0)).get("amount"));
     }
 
     private User collector(int tenantId, String role) {

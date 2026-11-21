@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
 
@@ -20,6 +21,7 @@ import java.util.Map;
 @RequestMapping("/api")
 public class PaymentCollectionController {
     private static final int MAX_REPORT_DAYS = 366;
+    private static final ZoneId RETAILER_ZONE = ZoneId.of("Asia/Kolkata");
     private final PaymentCollectionService paymentCollectionService;
 
     public PaymentCollectionController(PaymentCollectionService paymentCollectionService) {
@@ -63,7 +65,7 @@ public class PaymentCollectionController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
         requireTenantContext();
-        LocalDate end = to == null ? LocalDate.now() : to;
+        LocalDate end = to == null ? LocalDate.now(RETAILER_ZONE) : to;
         LocalDate start = from == null ? end : from;
         if (start.isAfter(end) || ChronoUnit.DAYS.between(start, end) > MAX_REPORT_DAYS) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,

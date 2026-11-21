@@ -268,6 +268,63 @@ public class NonGstInvoiceService {
         });
     }
 
+    @Transactional(readOnly = true)
+    public Map<String, Object> getNonGstInvoice(Long id) {
+        Long tenantId = TenantContext.getCurrentTenant();
+        if (tenantId == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+
+        NonGstInvoice invoice = nonGstInvoiceRepository.findByIdAndTenantId(id, tenantId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Invoice not found"));
+        BigDecimal grandTotal = invoice.getGrandTotal() == null ? BigDecimal.ZERO : invoice.getGrandTotal();
+        BigDecimal paidAmount = invoice.getPaidAmount() == null ? BigDecimal.ZERO : invoice.getPaidAmount();
+        BigDecimal outstandingAmount = grandTotal.subtract(paidAmount).max(BigDecimal.ZERO);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("id", invoice.getId());
+        data.put("invoiceNo", invoice.getInvoiceNo());
+        data.put("date", invoice.getDate());
+        data.put("customerName", invoice.getCustomerName());
+        data.put("customerPhone", invoice.getCustomerPhone());
+        data.put("paymentMethod", invoice.getPaymentMethod());
+        data.put("subtotal", invoice.getSubtotal());
+        data.put("gstAmount", invoice.getGstAmount());
+        data.put("grandTotal", grandTotal);
+        data.put("totalAmount", grandTotal);
+        data.put("paidAmount", paidAmount);
+        data.put("receivedAmount", paidAmount);
+        data.put("outstandingAmount", outstandingAmount);
+        data.put("dueCollection", outstandingAmount);
+        data.put("paymentStatus", invoice.getPaymentStatus());
+        data.put("status", invoice.getStatus());
+        data.put("billType", invoice.getBillType());
+        data.put("isGstInvoice", invoice.isGstInvoice());
+        data.put("tenantId", invoice.getTenant() != null ? invoice.getTenant().getId() : null);
+        data.put("userId", invoice.getUser() != null ? invoice.getUser().getId() : null);
+        data.put("createdAt", invoice.getCreatedAt());
+        data.put("items", invoice.getItems() == null ? List.of() : invoice.getItems().stream().map(item -> {
+            Map<String, Object> itemData = new HashMap<>();
+            itemData.put("id", item.getId());
+            itemData.put("productId", item.getProduct() != null ? item.getProduct().getId() : null);
+            itemData.put("name", item.getName());
+            itemData.put("sku", item.getSku());
+            itemData.put("hsn", item.getHsn());
+            itemData.put("category", item.getCategory());
+            itemData.put("gstRate", item.getGstRate());
+            itemData.put("cgst", item.getCgst());
+            itemData.put("sgst", item.getSgst());
+            itemData.put("igst", item.getIgst());
+            itemData.put("taxAmount", item.getTaxAmount());
+            itemData.put("price", item.getPrice());
+            itemData.put("qty", item.getQty());
+            itemData.put("itemSubtotal", item.getItemSubtotal());
+            itemData.put("itemTotal", item.getItemTotal());
+            return itemData;
+        }).toList());
+        return data;
+    }
+
     @Transactional
     public Map<String, Object> cancelNonGstInvoice(Long id) {
         Long tenantId = TenantContext.getCurrentTenant();

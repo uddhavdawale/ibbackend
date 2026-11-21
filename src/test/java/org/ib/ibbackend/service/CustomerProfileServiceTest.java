@@ -135,6 +135,45 @@ class CustomerProfileServiceTest {
     }
 
     @Test
+    void shouldRefreshCustomerLedgerFromCurrentGstAndNonGstInvoiceBalances() {
+        CustomerProfileRepository customerProfileRepository = mock(CustomerProfileRepository.class);
+        InvoiceRepository invoiceRepository = mock(InvoiceRepository.class);
+        NonGstInvoiceRepository nonGstInvoiceRepository = mock(NonGstInvoiceRepository.class);
+        CustomerProfile existing = new CustomerProfile();
+        existing.setId(5L);
+        existing.setTenantId(7L);
+        existing.setCustomerName("Ravi");
+        existing.setPhone("9999999999");
+        existing.setDueBalance(new BigDecimal("130.00"));
+        existing.setPreviousOrderCount(3);
+        existing.setLastOrderId(8L);
+        when(customerProfileRepository.findByTenantIdAndPhoneForUpdate(7L, "9999999999"))
+                .thenReturn(Optional.of(existing));
+        when(customerProfileRepository.save(any(CustomerProfile.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(invoiceRepository.getOutstandingByTenantAndPhone(7L, "9999999999", "Ravi"))
+                .thenReturn(new BigDecimal("40.00"));
+        when(nonGstInvoiceRepository.getOutstandingByTenantAndPhone(7L, "9999999999", "Ravi"))
+                .thenReturn(new BigDecimal("30.00"));
+
+        CustomerProfileService service = new CustomerProfileService(
+                customerProfileRepository, invoiceRepository, nonGstInvoiceRepository);
+        Invoice collectedInvoice = new Invoice();
+        collectedInvoice.setCustomerName("Ravi");
+        collectedInvoice.setCustomerPhone("9999999999");
+        Tenant tenant = new Tenant();
+        tenant.setId(7);
+        collectedInvoice.setTenant(tenant);
+
+        service.refreshLedgerForInvoice(collectedInvoice);
+
+        assertEquals(new BigDecimal("70.00"), existing.getDueBalance());
+        assertEquals(existing.getDueBalance(), existing.getOutstandingBalance());
+        assertEquals(3, existing.getPreviousOrderCount());
+        assertEquals(8L, existing.getLastOrderId());
+    }
+
+    @Test
     void shouldCreateCustomerProfileFromRequest() {
         CustomerProfileRepository repository = mock(CustomerProfileRepository.class);
         InvoiceRepository invoiceRepository = mock(InvoiceRepository.class);

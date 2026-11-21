@@ -3,6 +3,7 @@ package org.ib.ibbackend.service;
 import org.ib.ibbackend.dto.NonGstInvoiceRequest;
 import org.ib.ibbackend.dto.NonGstInvoiceRequestItem;
 import org.ib.ibbackend.entity.NonGstInvoice;
+import org.ib.ibbackend.entity.NonGstInvoiceItem;
 import org.ib.ibbackend.entity.Product;
 import org.ib.ibbackend.entity.Tenant;
 import org.ib.ibbackend.entity.User;
@@ -17,7 +18,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -142,5 +145,53 @@ class NonGstInvoiceServiceTest {
         request.setItems(List.of(item));
 
         assertThrows(ResponseStatusException.class, () -> service.createNonGstInvoice(request));
+    }
+
+    @Test
+    void shouldReturnTenantScopedInvoiceDetailsAndCurrentPaymentBalance() {
+        NonGstInvoiceRepository invoiceRepository = mock(NonGstInvoiceRepository.class);
+        NonGstInvoiceService service = new NonGstInvoiceService(
+                invoiceRepository, mock(ProductRepository.class), mock(UserRepository.class));
+        Tenant tenant = new Tenant();
+        tenant.setId(7);
+        User user = new User();
+        user.setId(22L);
+
+        Product product = new Product();
+        product.setId(12L);
+        NonGstInvoiceItem item = new NonGstInvoiceItem();
+        item.setProduct(product);
+        item.setName("Notebook");
+        item.setPrice(new BigDecimal("2.75"));
+        item.setQty(1);
+        item.setItemSubtotal(new BigDecimal("2.75"));
+        item.setItemTotal(new BigDecimal("2.75"));
+
+        NonGstInvoice invoice = new NonGstInvoice();
+        invoice.setId(104L);
+        invoice.setInvoiceNo("INV-104");
+        invoice.setDate(LocalDate.of(2026, 11, 21));
+        invoice.setCustomerName("Walk-in Customer");
+        invoice.setTenant(tenant);
+        invoice.setUser(user);
+        invoice.setGrandTotal(new BigDecimal("115.50"));
+        invoice.setPaidAmount(new BigDecimal("115.50"));
+        invoice.setPaymentStatus("PAID");
+        invoice.setStatus("PAID");
+        invoice.setItems(List.of(item));
+        TenantContext.setCurrentTenant(7L);
+        when(invoiceRepository.findByIdAndTenantId(104L, 7L)).thenReturn(Optional.of(invoice));
+
+        Map<String, Object> response = service.getNonGstInvoice(104L);
+
+        assertEquals(new BigDecimal("115.50"), response.get("grandTotal"));
+        assertEquals(new BigDecimal("115.50"), response.get("paidAmount"));
+        assertEquals(new BigDecimal("0.00"), response.get("outstandingAmount"));
+        assertEquals(new BigDecimal("0.00"), response.get("dueCollection"));
+        assertEquals("PAID", response.get("paymentStatus"));
+        assertEquals("Walk-in Customer", response.get("customerName"));
+        List<?> items = (List<?>) response.get("items");
+        assertEquals(1, items.size());
+        assertEquals("Notebook", ((Map<?, ?>) items.get(0)).get("name"));
     }
 }

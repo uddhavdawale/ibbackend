@@ -1,7 +1,9 @@
 package org.ib.ibbackend.repository;
 
 import org.ib.ibbackend.entity.CustomerProfile;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -17,6 +19,16 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
     Optional<CustomerProfile> findByTenantIdAndEmail(Long tenantId, String email);
 
     Optional<CustomerProfile> findByTenantIdAndCustomerName(Long tenantId, String customerName);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM CustomerProfile c WHERE c.tenantId = :tenantId AND c.phone = :phone")
+    Optional<CustomerProfile> findByTenantIdAndPhoneForUpdate(@Param("tenantId") Long tenantId,
+                                                              @Param("phone") String phone);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM CustomerProfile c WHERE c.tenantId = :tenantId AND c.customerName = :customerName")
+    Optional<CustomerProfile> findByTenantIdAndCustomerNameForUpdate(
+            @Param("tenantId") Long tenantId, @Param("customerName") String customerName);
 
     List<CustomerProfile> findByTenantIdOrderByUpdatedAtDesc(Long tenantId);
 
