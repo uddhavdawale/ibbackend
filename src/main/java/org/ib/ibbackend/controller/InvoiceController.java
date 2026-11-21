@@ -168,6 +168,9 @@ public class InvoiceController {
                     invoice.setStatus(Invoice.InvoiceStatus.CANCELLED);
                     invoice.setPaymentStatus(Invoice.PaymentStatus.CANCELLED);
                     Invoice saved = invoiceRepository.save(invoice);
+                    if (customerProfileService != null) {
+                        customerProfileService.refreshLedgerForInvoice(saved);
+                    }
                     auditSuccess("INVOICE_CANCEL", saved.getInvoiceNo(), "GST sell order cancelled and stock restored");
 
                     Map<String, Object> payload = new HashMap<>();

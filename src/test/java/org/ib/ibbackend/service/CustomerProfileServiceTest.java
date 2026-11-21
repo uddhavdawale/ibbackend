@@ -174,6 +174,35 @@ class CustomerProfileServiceTest {
     }
 
     @Test
+    void shouldRecalculateStoredCustomerBalanceWhenListingLedger() {
+        CustomerProfileRepository repository = mock(CustomerProfileRepository.class);
+        InvoiceRepository invoiceRepository = mock(InvoiceRepository.class);
+        NonGstInvoiceRepository nonGstInvoiceRepository = mock(NonGstInvoiceRepository.class);
+        CustomerProfile stale = new CustomerProfile();
+        stale.setTenantId(7L);
+        stale.setCustomerName("Ravi");
+        stale.setPhone("9999999999");
+        stale.setDueBalance(new BigDecimal("130.00"));
+
+        when(repository.findByTenantIdOrderByUpdatedAtDesc(7L)).thenReturn(List.of(stale));
+        when(invoiceRepository.findCustomerRecordsByTenantId(7L)).thenReturn(List.of());
+        when(nonGstInvoiceRepository.findCustomerRecordsByTenantId(7L)).thenReturn(List.of());
+        when(invoiceRepository.getOutstandingByTenantAndPhone(7L, "9999999999", "Ravi"))
+                .thenReturn(new BigDecimal("40.00"));
+        when(nonGstInvoiceRepository.getOutstandingByTenantAndPhone(7L, "9999999999", "Ravi"))
+                .thenReturn(new BigDecimal("30.00"));
+
+        CustomerProfileService service = new CustomerProfileService(
+                repository, invoiceRepository, nonGstInvoiceRepository);
+
+        List<CustomerProfile> customers = service.listByTenant(7L);
+
+        assertEquals(1, customers.size());
+        assertEquals(new BigDecimal("70.00"), customers.get(0).getDueBalance());
+        assertEquals(customers.get(0).getDueBalance(), customers.get(0).getOutstandingBalance());
+    }
+
+    @Test
     void shouldCreateCustomerProfileFromRequest() {
         CustomerProfileRepository repository = mock(CustomerProfileRepository.class);
         InvoiceRepository invoiceRepository = mock(InvoiceRepository.class);
@@ -240,6 +269,14 @@ class CustomerProfileServiceTest {
                 new CustomerInvoiceRecord(3L, "NG-3", "Asha", "7777777777",
                         new BigDecimal("20.00"), BigDecimal.ZERO, lastOrderDate)
         ));
+        when(invoiceRepository.getOutstandingByTenantAndPhone(7L, "8888888888", "Mina"))
+                .thenReturn(new BigDecimal("60.00"));
+        when(nonGstInvoiceRepository.getOutstandingByTenantAndPhone(7L, "8888888888", "Mina"))
+                .thenReturn(BigDecimal.ZERO);
+        when(invoiceRepository.getOutstandingByTenantAndPhone(7L, "7777777777", "Asha"))
+                .thenReturn(BigDecimal.ZERO);
+        when(nonGstInvoiceRepository.getOutstandingByTenantAndPhone(7L, "7777777777", "Asha"))
+                .thenReturn(new BigDecimal("20.00"));
 
         CustomerProfileService service = new CustomerProfileService(repository, invoiceRepository, nonGstInvoiceRepository);
 

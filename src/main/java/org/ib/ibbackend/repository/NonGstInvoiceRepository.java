@@ -63,6 +63,7 @@ public interface NonGstInvoiceRepository extends JpaRepository<NonGstInvoice, Lo
             SELECT COALESCE(SUM(GREATEST(COALESCE(i.grand_total, 0) - COALESCE(i.paid_amount, 0), 0)), 0)
             FROM non_gst_invoices i
             WHERE i.tenant_id = :tenantId
+              AND UPPER(COALESCE(i.status, '')) <> 'CANCELLED'
               AND (NULLIF(BTRIM(i.customer_phone), '') = :phone
                    OR (NULLIF(BTRIM(i.customer_phone), '') IS NULL
                        AND NULLIF(BTRIM(i.customer_name), '') = :customerName))
@@ -75,6 +76,7 @@ public interface NonGstInvoiceRepository extends JpaRepository<NonGstInvoice, Lo
             SELECT COALESCE(SUM(GREATEST(COALESCE(i.grand_total, 0) - COALESCE(i.paid_amount, 0), 0)), 0)
             FROM non_gst_invoices i
             WHERE i.tenant_id = :tenantId
+              AND UPPER(COALESCE(i.status, '')) <> 'CANCELLED'
               AND NULLIF(BTRIM(i.customer_name), '') = :customerName
             """, nativeQuery = true)
     BigDecimal getOutstandingByTenantAndCustomerName(@Param("tenantId") Long tenantId,

@@ -195,6 +195,28 @@ public class CustomerProfileService {
         for (CustomerInvoiceRecord invoice : nonGstInvoiceRepository.findCustomerRecordsByTenantId(tenantId)) {
             addInvoiceCustomer(customers, tenantId, invoice);
         }
+        for (CustomerProfile customer : customers) {
+            if (customer.getTenantId() == null) {
+                customer.setTenantId(tenantId);
+            }
+            String phone = normalizePhone(customer.getPhone());
+            String name = normalizeCustomerName(customer.getCustomerName());
+            BigDecimal gstDue;
+            BigDecimal nonGstDue;
+            if (phone != null) {
+                gstDue = invoiceRepository.getOutstandingByTenantAndPhone(tenantId, phone, name);
+                nonGstDue = nonGstInvoiceRepository.getOutstandingByTenantAndPhone(tenantId, phone, name);
+            } else if (name != null) {
+                gstDue = invoiceRepository.getOutstandingByTenantAndCustomerName(tenantId, name);
+                nonGstDue = nonGstInvoiceRepository.getOutstandingByTenantAndCustomerName(tenantId, name);
+            } else {
+                gstDue = BigDecimal.ZERO;
+                nonGstDue = BigDecimal.ZERO;
+            }
+            gstDue = gstDue == null ? BigDecimal.ZERO : gstDue;
+            nonGstDue = nonGstDue == null ? BigDecimal.ZERO : nonGstDue;
+            customer.applyOutstandingAmount(gstDue.add(nonGstDue));
+        }
         customers.sort(Comparator.comparing(
                 CustomerProfile::getUpdatedAt,
                 Comparator.nullsLast(Comparator.reverseOrder())

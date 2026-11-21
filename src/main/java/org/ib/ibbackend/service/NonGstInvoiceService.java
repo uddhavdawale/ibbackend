@@ -374,6 +374,9 @@ public class NonGstInvoiceService {
         invoice.setStatus("CANCELLED");
         invoice.setPaymentStatus("CANCELLED");
         NonGstInvoice saved = nonGstInvoiceRepository.save(invoice);
+        if (customerProfileService != null) {
+            customerProfileService.refreshLedgerForInvoice(saved);
+        }
         if (auditLogService != null) {
             auditLogService.success("INVOICE_CANCEL", saved.getInvoiceNo(), "Non-GST sell order cancelled and stock restored");
         }
