@@ -240,13 +240,15 @@ public class LoginController {
             return Optional.empty();
         }
         if (user.getTenant() == null && !UserRolePolicy.isSystemAdmin(user.getRole())) {
-            user.setTenant(createUniqueTenantForUser(user.getBusinessName(), user.getEmail()));
+            user.setTenant(createUniqueTenantForUser(user));
             userRepository.save(user);
         }
         return Optional.of(user);
     }
 
-    private Tenant createUniqueTenantForUser(String businessName, String email) {
+    private Tenant createUniqueTenantForUser(User user) {
+        String businessName = user.getBusinessName();
+        String email = user.getEmail();
         String normalizedBusinessName = businessName == null ? "Default Business" : businessName.trim();
         if (normalizedBusinessName.isBlank()) {
             normalizedBusinessName = "Default Business";
@@ -255,7 +257,30 @@ public class LoginController {
         Tenant tenant = new Tenant();
         tenant.setName(normalizedBusinessName);
         tenant.setCode(buildUniqueTenantCode(normalizedBusinessName, email));
+        tenant.setAddress(user.getAddress());
+        tenant.setCity(user.getCity());
+        tenant.setPincode(user.getPincode());
+        tenant.setGstin(validTenantGstin(user.getGstin()));
+        tenant.setPhone(safeTenantPhone(user.getPhone()));
+        tenant.setEmail(user.getEmail());
         return tenantRepository.save(tenant);
+    }
+
+    private String validTenantGstin(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = value.trim().toUpperCase(Locale.ROOT);
+        return normalized.matches("[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]")
+                ? normalized : null;
+    }
+
+    private String safeTenantPhone(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = value.trim();
+        return normalized.length() <= 32 ? normalized : null;
     }
 
     private String buildUniqueTenantCode(String businessName, String email) {

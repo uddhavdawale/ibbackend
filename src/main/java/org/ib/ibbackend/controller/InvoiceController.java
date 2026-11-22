@@ -14,6 +14,7 @@ import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.service.AuditLogService;
 import org.ib.ibbackend.service.InventorySecurityService;
 import org.ib.ibbackend.service.InvoiceNumberGenerator;
+import org.ib.ibbackend.service.InvoiceIssuerResolver;
 import org.ib.ibbackend.service.PaymentCollectionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -255,6 +256,12 @@ public class InvoiceController {
             summary.put("customerName", invoice.getCustomerName());
             summary.put("customerPhone", invoice.getCustomerPhone());
             summary.put("customerEmail", invoice.getCustomerEmail());
+            summary.put("issuerType", invoice.getIssuerType());
+            summary.put("issuerName", invoice.getIssuerName());
+            summary.put("issuerGstin", invoice.getIssuerGstin());
+            summary.put("issuerAddress", invoice.getIssuerAddress());
+            summary.put("issuerPhone", invoice.getIssuerPhone());
+            summary.put("issuerEmail", invoice.getIssuerEmail());
             summary.put("paymentMethod", invoice.getPaymentMethod());
             summary.put("subtotal", invoice.getSubtotal() != null ? invoice.getSubtotal() : BigDecimal.ZERO);
             summary.put("gstAmount", invoice.getGstAmount() != null ? invoice.getGstAmount() : BigDecimal.ZERO);
@@ -367,6 +374,21 @@ public class InvoiceController {
                 }
             }
 
+            String email = SecurityContextHolder.getContext().getAuthentication() != null
+                    ? SecurityContextHolder.getContext().getAuthentication().getName()
+                    : null;
+            User currentUser = email == null || email.isBlank()
+                    ? null
+                    : userRepository.findByEmail(email)
+                            .or(() -> userRepository.findByUsername(email))
+                            .orElse(null);
+            if (currentUser == null || currentUser.getTenant() == null
+                    || currentUser.getTenant().getId() != Math.toIntExact(tenantId)) {
+                throw new org.springframework.security.access.AccessDeniedException("Access denied");
+            }
+            InvoiceIssuerResolver.Snapshot issuer =
+                    InvoiceIssuerResolver.resolve(currentUser, invoiceRequest.getIssuerType(), true);
+
             String invoiceNo = InvoiceNumberGenerator.generate();
 
             for (InvoiceItem item : invoiceRequest.getItems()) {
@@ -418,22 +440,16 @@ public class InvoiceController {
             invoice.setPaidAmount(paidAmount);
             invoice.setPaymentStatus(resolvePaymentStatus(paidAmount, grandTotal));
             invoice.setStatus(resolveInvoiceStatus(invoice.getPaymentStatus()));
+            invoice.setIssuerType(issuer.type());
+            invoice.setIssuerName(issuer.name());
+            invoice.setIssuerGstin(issuer.gstin());
+            invoice.setIssuerAddress(issuer.address());
+            invoice.setIssuerPhone(issuer.phone());
+            invoice.setIssuerEmail(issuer.email());
             Tenant tenant = new Tenant();
             tenant.setId(Math.toIntExact(tenantId));
             invoice.setTenant(tenant);
 
-            String email = SecurityContextHolder.getContext().getAuthentication() != null
-                    ? SecurityContextHolder.getContext().getAuthentication().getName()
-                    : null;
-            User currentUser = email == null || email.isBlank()
-                    ? null
-                    : userRepository.findByEmail(email)
-                            .or(() -> userRepository.findByUsername(email))
-                            .orElse(null);
-            if (currentUser == null || currentUser.getTenant() == null
-                    || currentUser.getTenant().getId() != Math.toIntExact(tenantId)) {
-                throw new org.springframework.security.access.AccessDeniedException("Access denied");
-            }
             invoice.setUserId(currentUser.getId());
 
             for (InvoiceItem item : invoiceItems) {

@@ -189,7 +189,25 @@ public class UserProvisioningService {
         tenant.setAddress(trimToNull(request.getAddress()));
         tenant.setCity(trimToNull(request.getCity()));
         tenant.setPincode(trimToNull(request.getPincode()));
+        tenant.setState(withinLimit(trimToNull(request.getState()), 100));
+        tenant.setGstin(validGstin(request.getGstin()));
+        tenant.setPhone(withinLimit(trimToNull(request.getPhone()), 32));
+        tenant.setEmail(email);
         return tenantRepository.save(tenant);
+    }
+
+    private String validGstin(String value) {
+        String gstin = trimToNull(value);
+        if (gstin == null) {
+            return null;
+        }
+        String normalized = gstin.toUpperCase(Locale.ROOT);
+        return normalized.matches("[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]")
+                ? normalized : null;
+    }
+
+    private String withinLimit(String value, int maxLength) {
+        return value != null && value.length() <= maxLength ? value : null;
     }
 
     private String buildUniqueTenantCode(String businessName, String email) {

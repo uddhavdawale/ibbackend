@@ -2,6 +2,7 @@ package org.ib.ibbackend.controller;
 
 import org.ib.ibbackend.entity.Tenant;
 import org.ib.ibbackend.entity.TenantAssetType;
+import org.ib.ibbackend.entity.Organization;
 import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.filter.TenantContext;
 import org.ib.ibbackend.repository.TenantRepository;
@@ -15,6 +16,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Optional;
+import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -57,7 +59,8 @@ class ShopControllerTest {
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(tenantAssetService.availableTypes(tenant)).thenReturn(Set.of());
 
-        controller.updateCurrentShop("Main Road", "Pune", "411001", null, null, null, null);
+        controller.updateCurrentShop(
+                "Main Road", "Pune", "411001", null, null, null, null, null, null, null, null);
 
         assertEquals("Main Road", tenant.getAddress());
         assertEquals("Main Road", user.getAddress());
@@ -80,7 +83,7 @@ class ShopControllerTest {
         when(userRepository.findByEmail("owner@example.com")).thenReturn(Optional.of(user));
         when(tenantAssetService.availableTypes(tenant)).thenReturn(Set.of());
 
-        controller.updateCurrentShop(null, null, null, null, null, null, null);
+        controller.updateCurrentShop(null, null, null, null, null, null, null, null, null, null, null);
 
         verify(tenantRepository, never()).save(any(Tenant.class));
         verify(userRepository, never()).save(any(User.class));
@@ -97,8 +100,68 @@ class ShopControllerTest {
         when(userRepository.findByEmail("manager@example.com")).thenReturn(Optional.of(user));
 
         assertThrows(AccessDeniedException.class,
-                () -> controller.updateCurrentShop(null, null, null, null, null, null, null));
+                () -> controller.updateCurrentShop(
+                        null, null, null, null, null, null, null, null, null, null, null));
         verify(tenantAssetService, never()).storeIfProvided(any(), any(), any(MultipartFile.class));
+    }
+
+    @Test
+    void shouldPersistStoreLegalDetailsSeparatelyFromTheLoginEmail() {
+        Tenant tenant = new Tenant();
+        tenant.setId(7);
+        User user = new User();
+        user.setEmail("owner-login@example.com");
+        user.setRole("store_admin");
+        user.setTenant(tenant);
+        authenticate();
+        when(userRepository.findByEmail("owner@example.com")).thenReturn(Optional.of(user));
+        when(tenantRepository.save(any(Tenant.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tenantAssetService.availableTypes(tenant)).thenReturn(Set.of());
+
+        controller.updateCurrentShop(
+                null, null, null, "Maharashtra", "27abcde1234f1z5",
+                "0201234567", "billing@example.com", null, null, null, null);
+
+        assertEquals("Maharashtra", tenant.getState());
+        assertEquals("27ABCDE1234F1Z5", tenant.getGstin());
+        assertEquals("0201234567", tenant.getPhone());
+        assertEquals("billing@example.com", tenant.getEmail());
+        assertEquals("owner-login@example.com", user.getEmail());
+    }
+
+    @Test
+    void shouldReturnOnlyTheAuthenticatedStoresOrganizationLegalSummary() {
+        Tenant tenant = new Tenant();
+        tenant.setId(7);
+        tenant.setName("Demo Store");
+        Organization organization = new Organization();
+        organization.setId(42L);
+        organization.setName("Retail Group");
+        organization.setGstin("27ABCDE1234F1Z5");
+        organization.setAddress("Main Road");
+        organization.setCity("Pune");
+        organization.setState("Maharashtra");
+        organization.setPincode("411001");
+        tenant.setOrganization(organization);
+
+        User user = new User();
+        user.setId(12L);
+        user.setEmail("owner@example.com");
+        user.setBusinessName("Demo Store");
+        user.setRole("store_admin");
+        user.setTenant(tenant);
+        authenticate();
+        when(userRepository.findByEmail("owner@example.com")).thenReturn(Optional.of(user));
+        when(tenantAssetService.availableTypes(tenant)).thenReturn(Set.of());
+
+        Map<?, ?> shop = (Map<?, ?>) controller.getCurrentShop().getBody().get("shop");
+        Map<?, ?> orgSummary = (Map<?, ?>) shop.get("organization");
+
+        assertEquals(42L, orgSummary.get("id"));
+        assertEquals("Retail Group", orgSummary.get("name"));
+        assertEquals("27ABCDE1234F1Z5", orgSummary.get("gstin"));
+        assertEquals("Main Road, Pune, Maharashtra, 411001", orgSummary.get("registeredAddress"));
     }
 
     private void authenticate() {

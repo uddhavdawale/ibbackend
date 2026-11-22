@@ -60,6 +60,24 @@ public class NonGstInvoice {
     @Column(name = "paid_amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal paidAmount = BigDecimal.ZERO;
 
+    @Column(name = "issuer_type", length = 32)
+    private String issuerType;
+
+    @Column(name = "issuer_name", length = 255)
+    private String issuerName;
+
+    @Column(name = "issuer_gstin", length = 15)
+    private String issuerGstin;
+
+    @Column(name = "issuer_address", length = 1000)
+    private String issuerAddress;
+
+    @Column(name = "issuer_phone", length = 32)
+    private String issuerPhone;
+
+    @Column(name = "issuer_email", length = 255)
+    private String issuerEmail;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "tenant_id", nullable = false)
     private Tenant tenant;
@@ -185,6 +203,54 @@ public class NonGstInvoice {
 
     public void setPaidAmount(BigDecimal paidAmount) {
         this.paidAmount = paidAmount;
+    }
+
+    public String getIssuerType() {
+        return issuerType;
+    }
+
+    public void setIssuerType(String issuerType) {
+        this.issuerType = issuerType;
+    }
+
+    public String getIssuerName() {
+        return issuerName;
+    }
+
+    public void setIssuerName(String issuerName) {
+        this.issuerName = issuerName;
+    }
+
+    public String getIssuerGstin() {
+        return issuerGstin;
+    }
+
+    public void setIssuerGstin(String issuerGstin) {
+        this.issuerGstin = issuerGstin;
+    }
+
+    public String getIssuerAddress() {
+        return issuerAddress;
+    }
+
+    public void setIssuerAddress(String issuerAddress) {
+        this.issuerAddress = issuerAddress;
+    }
+
+    public String getIssuerPhone() {
+        return issuerPhone;
+    }
+
+    public void setIssuerPhone(String issuerPhone) {
+        this.issuerPhone = issuerPhone;
+    }
+
+    public String getIssuerEmail() {
+        return issuerEmail;
+    }
+
+    public void setIssuerEmail(String issuerEmail) {
+        this.issuerEmail = issuerEmail;
     }
 
     public Tenant getTenant() {

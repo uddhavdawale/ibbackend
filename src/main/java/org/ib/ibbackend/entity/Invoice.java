@@ -77,6 +77,24 @@ public class Invoice {
     @Column(name = "customer_email", length = 255)
     private String customerEmail;
 
+    @Column(name = "issuer_type", length = 32)
+    private String issuerType;
+
+    @Column(name = "issuer_name", length = 255)
+    private String issuerName;
+
+    @Column(name = "issuer_gstin", length = 15)
+    private String issuerGstin;
+
+    @Column(name = "issuer_address", length = 1000)
+    private String issuerAddress;
+
+    @Column(name = "issuer_phone", length = 32)
+    private String issuerPhone;
+
+    @Column(name = "issuer_email", length = 255)
+    private String issuerEmail;
+
     // Constructors
     public Invoice() {}
 
@@ -162,6 +180,24 @@ public class Invoice {
 
     public String getCustomerEmail() { return customerEmail; }
     public void setCustomerEmail(String customerEmail) { this.customerEmail = customerEmail; }
+
+    public String getIssuerType() { return issuerType; }
+    public void setIssuerType(String issuerType) { this.issuerType = issuerType; }
+
+    public String getIssuerName() { return issuerName; }
+    public void setIssuerName(String issuerName) { this.issuerName = issuerName; }
+
+    public String getIssuerGstin() { return issuerGstin; }
+    public void setIssuerGstin(String issuerGstin) { this.issuerGstin = issuerGstin; }
+
+    public String getIssuerAddress() { return issuerAddress; }
+    public void setIssuerAddress(String issuerAddress) { this.issuerAddress = issuerAddress; }
+
+    public String getIssuerPhone() { return issuerPhone; }
+    public void setIssuerPhone(String issuerPhone) { this.issuerPhone = issuerPhone; }
+
+    public String getIssuerEmail() { return issuerEmail; }
+    public void setIssuerEmail(String issuerEmail) { this.issuerEmail = issuerEmail; }
 
     public List<InvoiceItem> getItems() { return items; }
     public void setItems(List<InvoiceItem> items) { this.items = items; }

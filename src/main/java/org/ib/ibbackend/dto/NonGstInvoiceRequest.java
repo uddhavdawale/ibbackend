@@ -12,6 +12,7 @@ public class NonGstInvoiceRequest {
     private String status;
     private String billType;
     private Boolean isGstInvoice;
+    private String issuerType;
     private BigDecimal paidAmount;
     private BigDecimal amountPaid;
     private BigDecimal receivedAmount;
@@ -75,6 +76,14 @@ public class NonGstInvoiceRequest {
 
     public void setIsGstInvoice(Boolean gstInvoice) {
         isGstInvoice = gstInvoice;
+    }
+
+    public String getIssuerType() {
+        return issuerType;
+    }
+
+    public void setIssuerType(String issuerType) {
+        this.issuerType = issuerType;
     }
 
     public BigDecimal getPaidAmount() {

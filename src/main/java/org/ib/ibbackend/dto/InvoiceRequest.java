@@ -19,6 +19,7 @@ public class InvoiceRequest {
     private BigDecimal totalAmount;
     private String billType;
     private Boolean isGstInvoice;
+    private String issuerType;
     private List<InvoiceItem> items;
 
     // ✅ Jackson needs no-arg constructor
@@ -89,6 +90,9 @@ public class InvoiceRequest {
 
     public Boolean getIsGstInvoice() { return isGstInvoice == null ? Boolean.TRUE : isGstInvoice; }
     public void setIsGstInvoice(Boolean gstInvoice) { isGstInvoice = gstInvoice; }
+
+    public String getIssuerType() { return issuerType; }
+    public void setIssuerType(String issuerType) { this.issuerType = issuerType; }
 
     public List<InvoiceItem> getItems() { return items; }
     public void setItems(List<InvoiceItem> items) { this.items = items; }

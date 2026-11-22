@@ -3,6 +3,7 @@ package org.ib.ibbackend.controller;
 import org.ib.ibbackend.entity.Tenant;
 import org.ib.ibbackend.entity.TenantAsset;
 import org.ib.ibbackend.entity.TenantAssetType;
+import org.ib.ibbackend.entity.Organization;
 import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.filter.TenantContext;
 import org.ib.ibbackend.repository.TenantRepository;
@@ -29,6 +30,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -59,6 +61,7 @@ public class ShopController {
     }
 
     @GetMapping({"", "/", "/me"})
+    @Transactional(readOnly = true)
     public ResponseEntity<Map<String, Object>> getCurrentShop() {
         User user = currentUser();
         Tenant tenant = tenantFor(user);
@@ -80,15 +83,38 @@ public class ShopController {
         shop.put("shopName", businessName);
         shop.put("displayName", businessName);
         shop.put("ownerName", user.getOwnerName());
-        shop.put("email", user.getEmail());
-        shop.put("phone", user.getPhone());
-        shop.put("gstin", user.getGstin());
+        shop.put("email", firstNonBlank(tenant != null ? tenant.getEmail() : null, user.getEmail()));
+        shop.put("phone", firstNonBlank(tenant != null ? tenant.getPhone() : null, user.getPhone()));
+        shop.put("gstin", firstNonBlank(tenant != null ? tenant.getGstin() : null, user.getGstin()));
         shop.put("pan", user.getPan());
         shop.put("role", user.getRole());
         shop.put("address", firstNonBlank(tenant != null ? tenant.getAddress() : null, user.getAddress()));
         shop.put("shopAddress", firstNonBlank(tenant != null ? tenant.getAddress() : null, user.getAddress()));
         shop.put("city", firstNonBlank(tenant != null ? tenant.getCity() : null, user.getCity()));
+        shop.put("state", tenant != null ? tenant.getState() : null);
         shop.put("pincode", firstNonBlank(tenant != null ? tenant.getPincode() : null, user.getPincode()));
+
+        Organization organization = user.getTenant() == null ? null : user.getTenant().getOrganization();
+        Map<String, Object> organizationSummary = null;
+        if (organization != null) {
+            organizationSummary = new LinkedHashMap<>();
+            organizationSummary.put("id", organization.getId());
+            organizationSummary.put("name", organization.getName());
+            organizationSummary.put("gstin", organization.getGstin());
+            organizationSummary.put("phone", organization.getPhone());
+            organizationSummary.put("email", organization.getEmail());
+            organizationSummary.put("address", organization.getAddress());
+            organizationSummary.put("city", organization.getCity());
+            organizationSummary.put("state", organization.getState());
+            organizationSummary.put("pincode", organization.getPincode());
+            organizationSummary.put("registeredAddress", formatAddress(
+                    organization.getAddress(),
+                    organization.getCity(),
+                    organization.getState(),
+                    organization.getPincode()));
+        }
+        shop.put("organization", organizationSummary);
+        shop.put("organizationAssigned", organization != null);
 
         Set<TenantAssetType> availableAssets = tenant != null && tenantAssetService != null
                 ? tenantAssetService.availableTypes(tenant)
@@ -112,6 +138,10 @@ public class ShopController {
             @RequestParam(value = "address", required = false) String address,
             @RequestParam(value = "city", required = false) String city,
             @RequestParam(value = "pincode", required = false) String pincode,
+            @RequestParam(value = "state", required = false) String state,
+            @RequestParam(value = "gstin", required = false) String gstin,
+            @RequestParam(value = "phone", required = false) String phone,
+            @RequestParam(value = "storeEmail", required = false) String storeEmail,
             @RequestParam(value = "logo", required = false) MultipartFile logo,
             @RequestParam(value = "gstCertificate", required = false) MultipartFile gstCertificate,
             @RequestParam(value = "panCard", required = false) MultipartFile panCard,
@@ -119,7 +149,16 @@ public class ShopController {
         User user = requireRetailer();
         Tenant tenant = requireTenant(user);
 
-        boolean profileChanged = address != null || city != null || pincode != null;
+        validateLength(address, 500, "address");
+        validateLength(city, 100, "city");
+        validateLength(pincode, 20, "pincode");
+        validateLength(state, 100, "state");
+        validateLength(gstin, 15, "gstin");
+        validateLength(phone, 32, "phone");
+        validateLength(storeEmail, 255, "storeEmail");
+
+        boolean profileChanged = address != null || city != null || pincode != null
+                || state != null || gstin != null || phone != null || storeEmail != null;
         if (address != null) {
             tenant.setAddress(trimToNull(address));
             user.setAddress(trimToNull(address));
@@ -131,6 +170,29 @@ public class ShopController {
         if (pincode != null) {
             tenant.setPincode(trimToNull(pincode));
             user.setPincode(trimToNull(pincode));
+        }
+        if (state != null) {
+            tenant.setState(trimToNull(state));
+        }
+        if (gstin != null) {
+            String normalizedGstin = trimToNull(gstin);
+            if (normalizedGstin != null && !normalizedGstin.toUpperCase(Locale.ROOT).matches(
+                    "[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]")) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid store GSTIN");
+            }
+            tenant.setGstin(normalizedGstin == null ? null : normalizedGstin.toUpperCase(Locale.ROOT));
+            user.setGstin(tenant.getGstin());
+        }
+        if (phone != null) {
+            tenant.setPhone(trimToNull(phone));
+            user.setPhone(tenant.getPhone());
+        }
+        if (storeEmail != null) {
+            String normalizedEmail = trimToNull(storeEmail);
+            if (normalizedEmail != null && !normalizedEmail.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid store email");
+            }
+            tenant.setEmail(normalizedEmail);
         }
 
         if (profileChanged) {
@@ -191,6 +253,7 @@ public class ShopController {
             throw new AccessDeniedException("Access denied");
         }
         return userRepository.findByEmail(authentication.getName())
+                .or(() -> userRepository.findByUsername(authentication.getName()))
                 .orElseThrow(() -> new AccessDeniedException("Access denied"));
     }
 
@@ -227,7 +290,21 @@ public class ShopController {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    private void validateLength(String value, int maxLength, String fieldName) {
+        if (value != null && value.trim().length() > maxLength) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, fieldName + " must be at most " + maxLength + " characters");
+        }
+    }
+
     private String firstNonBlank(String preferred, String fallback) {
         return preferred == null || preferred.isBlank() ? fallback : preferred;
+    }
+
+    private String formatAddress(String... parts) {
+        return java.util.Arrays.stream(parts)
+                .filter(part -> part != null && !part.isBlank())
+                .map(String::trim)
+                .collect(java.util.stream.Collectors.joining(", "));
     }
 }

@@ -299,7 +299,30 @@ public class AuthController {
         Tenant tenant = new Tenant();
         tenant.setName(businessName);
         tenant.setCode(prefix + String.valueOf(suffix).substring(Math.max(0, String.valueOf(suffix).length() - 4)));
+        tenant.setAddress(user.getAddress());
+        tenant.setCity(user.getCity());
+        tenant.setPincode(user.getPincode());
+        tenant.setGstin(validTenantGstin(user.getGstin()));
+        tenant.setPhone(safeTenantPhone(user.getPhone()));
+        tenant.setEmail(user.getEmail());
         return tenant;
+    }
+
+    private String validTenantGstin(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = value.trim().toUpperCase(Locale.ROOT);
+        return normalized.matches("[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]")
+                ? normalized : null;
+    }
+
+    private String safeTenantPhone(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = value.trim();
+        return normalized.length() <= 32 ? normalized : null;
     }
 
 }

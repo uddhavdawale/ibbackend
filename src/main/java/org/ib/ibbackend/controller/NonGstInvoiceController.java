@@ -8,6 +8,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestController
@@ -23,12 +24,18 @@ public class NonGstInvoiceController {
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> createNonGstInvoice(@RequestBody NonGstInvoiceRequest request) {
         NonGstInvoice saved = nonGstInvoiceService.createNonGstInvoice(request);
-        return ResponseEntity.ok(Map.of(
-                "success", true,
-                "invoiceNo", saved.getInvoiceNo(),
-                "id", saved.getId(),
-                "message", "Non-GST invoice saved successfully"
-        ));
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("success", true);
+        response.put("invoiceNo", saved.getInvoiceNo());
+        response.put("id", saved.getId());
+        response.put("issuerType", saved.getIssuerType());
+        response.put("issuerName", saved.getIssuerName());
+        response.put("issuerGstin", saved.getIssuerGstin());
+        response.put("issuerAddress", saved.getIssuerAddress());
+        response.put("issuerPhone", saved.getIssuerPhone());
+        response.put("issuerEmail", saved.getIssuerEmail());
+        response.put("message", "Non-GST invoice saved successfully");
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping

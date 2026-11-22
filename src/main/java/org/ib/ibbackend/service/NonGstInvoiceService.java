@@ -84,8 +84,9 @@ public class NonGstInvoiceService {
         if (currentUser.getTenant() == null || currentUser.getTenant().getId() != Math.toIntExact(tenantId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Authenticated user does not belong to current tenant");
         }
-
         validateRequest(request);
+        InvoiceIssuerResolver.Snapshot issuer =
+                InvoiceIssuerResolver.resolve(currentUser, request.getIssuerType(), false);
 
         String invoiceNo = InvoiceNumberGenerator.generate();
 
@@ -97,6 +98,12 @@ public class NonGstInvoiceService {
         invoice.setPaymentMethod(sanitizeText(request.getPaymentMethod(), 100));
         invoice.setBillType("non-gst");
         invoice.setGstInvoice(false);
+        invoice.setIssuerType(issuer.type());
+        invoice.setIssuerName(issuer.name());
+        invoice.setIssuerGstin(issuer.gstin());
+        invoice.setIssuerAddress(issuer.address());
+        invoice.setIssuerPhone(issuer.phone());
+        invoice.setIssuerEmail(issuer.email());
 
         Tenant tenantRef = new Tenant();
         tenantRef.setId(Math.toIntExact(tenantId));
@@ -247,6 +254,12 @@ public class NonGstInvoiceService {
             data.put("date", invoice.getDate());
             data.put("customerName", invoice.getCustomerName());
             data.put("customerPhone", invoice.getCustomerPhone());
+            data.put("issuerType", invoice.getIssuerType());
+            data.put("issuerName", invoice.getIssuerName());
+            data.put("issuerGstin", invoice.getIssuerGstin());
+            data.put("issuerAddress", invoice.getIssuerAddress());
+            data.put("issuerPhone", invoice.getIssuerPhone());
+            data.put("issuerEmail", invoice.getIssuerEmail());
             data.put("paymentMethod", invoice.getPaymentMethod());
             data.put("subtotal", invoice.getSubtotal());
             data.put("gstAmount", BigDecimal.ZERO);
@@ -301,6 +314,12 @@ public class NonGstInvoiceService {
         data.put("date", invoice.getDate());
         data.put("customerName", invoice.getCustomerName());
         data.put("customerPhone", invoice.getCustomerPhone());
+        data.put("issuerType", invoice.getIssuerType());
+        data.put("issuerName", invoice.getIssuerName());
+        data.put("issuerGstin", invoice.getIssuerGstin());
+        data.put("issuerAddress", invoice.getIssuerAddress());
+        data.put("issuerPhone", invoice.getIssuerPhone());
+        data.put("issuerEmail", invoice.getIssuerEmail());
         data.put("paymentMethod", invoice.getPaymentMethod());
         data.put("subtotal", invoice.getSubtotal());
         data.put("gstAmount", invoice.getGstAmount());

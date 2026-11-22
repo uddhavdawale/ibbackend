@@ -111,6 +111,7 @@ public class SignupRequest {
     private String city;
 
     private String pincode;
+    private String state;
 
     // Getters & Setters
     public String getEmail() { return email; }
@@ -126,5 +127,13 @@ public class SignupRequest {
 
     public void setPincode(String pincode) {
         this.pincode = pincode;
+    }
+
+    public String getState() {
+        return state;
+    }
+
+    public void setState(String state) {
+        this.state = state;
     }
 }
