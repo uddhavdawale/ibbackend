@@ -97,8 +97,6 @@ public class NonGstInvoiceService {
         invoice.setPaymentMethod(sanitizeText(request.getPaymentMethod(), 100));
         invoice.setBillType("non-gst");
         invoice.setGstInvoice(false);
-        invoice.setPaymentStatus(normalizeStatus(request.getPaymentStatus()));
-        invoice.setStatus(normalizeStatus(request.getStatus()));
 
         Tenant tenantRef = new Tenant();
         tenantRef.setId(Math.toIntExact(tenantId));
@@ -171,14 +169,30 @@ public class NonGstInvoiceService {
         invoice.setGstAmount(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
         invoice.setGrandTotal(subtotal);
 
-        BigDecimal paidAmount = request.getPaidAmount() == null ? BigDecimal.ZERO : request.getPaidAmount().max(BigDecimal.ZERO);
-        if ("PAID".equals(invoice.getPaymentStatus())) {
+        BigDecimal paidAmount = request.getPaidAmount() == null
+                ? BigDecimal.ZERO : request.getPaidAmount().max(BigDecimal.ZERO);
+        String paymentIntent = request.getPaymentStatus() != null && !request.getPaymentStatus().isBlank()
+                ? normalizeStatus(request.getPaymentStatus())
+                : request.getStatus() != null && !request.getStatus().isBlank()
+                    ? normalizeStatus(request.getStatus()) : null;
+        if ("PAID".equals(paymentIntent)) {
             paidAmount = invoice.getGrandTotal();
+        } else if ("PENDING".equals(paymentIntent) || "CANCELLED".equals(paymentIntent)) {
+            paidAmount = BigDecimal.ZERO;
         }
         if (paidAmount.compareTo(invoice.getGrandTotal()) > 0) {
             paidAmount = invoice.getGrandTotal();
         }
-        invoice.setPaidAmount(paidAmount.setScale(2, RoundingMode.HALF_UP));
+        paidAmount = paidAmount.setScale(2, RoundingMode.HALF_UP);
+        invoice.setPaidAmount(paidAmount);
+        if ("CANCELLED".equals(paymentIntent)) {
+            invoice.setPaymentStatus("CANCELLED");
+            invoice.setStatus("CANCELLED");
+        } else {
+            String paymentStatus = resolvePaymentStatus(paidAmount, invoice.getGrandTotal());
+            invoice.setPaymentStatus(paymentStatus);
+            invoice.setStatus("PAID".equals(paymentStatus) ? "PAID" : "PENDING");
+        }
 
         invoice.setItems(items);
         NonGstInvoice saved = nonGstInvoiceRepository.save(invoice);
@@ -475,6 +489,13 @@ public class NonGstInvoiceService {
             return "PARTIAL";
         }
         return normalized;
+    }
+
+    private String resolvePaymentStatus(BigDecimal paidAmount, BigDecimal grandTotal) {
+        if (grandTotal.compareTo(BigDecimal.ZERO) > 0 && paidAmount.compareTo(grandTotal) >= 0) {
+            return "PAID";
+        }
+        return paidAmount.signum() > 0 ? "PARTIAL" : "PENDING";
     }
 
     private boolean isSupportedStatus(String value) {

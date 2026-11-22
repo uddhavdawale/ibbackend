@@ -81,17 +81,19 @@ public class CustomerProfileService {
             throw new AccessDeniedException("Access denied");
         }
 
+        String phone = normalizePhone(invoice.getCustomerPhone());
+        String name = normalizeCustomerName(invoice.getCustomerName());
+        if (phone == null && name == null) {
+            return null;
+        }
+
         CustomerProfileRequest request = new CustomerProfileRequest();
         request.setTenantId(tenantId);
-        request.setCustomerName(invoice.getCustomerName());
-        request.setPhone(invoice.getCustomerPhone());
+        request.setCustomerName(name);
+        request.setPhone(phone);
 
         CustomerProfile customer = createOrUpdateCustomer(request);
-        BigDecimal previousBalance = customer.getDueBalance() == null ? BigDecimal.ZERO : customer.getDueBalance();
-        BigDecimal currentInvoiceDue = computeInvoiceDue(invoice.getGrandTotal(), invoice.getPaidAmount());
-        BigDecimal totalDue = previousBalance.add(currentInvoiceDue).max(BigDecimal.ZERO);
-
-        customer.applyOutstandingAmount(totalDue);
+        customer.applyOutstandingAmount(calculateOutstanding(tenantId, phone, name));
         customer.setPreviousOrderCount(customer.getPreviousOrderCount() + 1);
         customer.setLastOrderId(invoice.getId());
         customer.setLastOrderNo(invoice.getInvoiceNo());
@@ -110,17 +112,19 @@ public class CustomerProfileService {
             throw new AccessDeniedException("Access denied");
         }
 
+        String phone = normalizePhone(invoice.getCustomerPhone());
+        String name = normalizeCustomerName(invoice.getCustomerName());
+        if (phone == null && name == null) {
+            return null;
+        }
+
         CustomerProfileRequest request = new CustomerProfileRequest();
         request.setTenantId(tenantId);
-        request.setCustomerName(invoice.getCustomerName());
-        request.setPhone(invoice.getCustomerPhone());
+        request.setCustomerName(name);
+        request.setPhone(phone);
 
         CustomerProfile customer = createOrUpdateCustomer(request);
-        BigDecimal previousBalance = customer.getDueBalance() == null ? BigDecimal.ZERO : customer.getDueBalance();
-        BigDecimal currentInvoiceDue = computeInvoiceDue(invoice.getGrandTotal(), invoice.getPaidAmount());
-        BigDecimal totalDue = previousBalance.add(currentInvoiceDue).max(BigDecimal.ZERO);
-
-        customer.applyOutstandingAmount(totalDue);
+        customer.applyOutstandingAmount(calculateOutstanding(tenantId, phone, name));
         customer.setPreviousOrderCount(customer.getPreviousOrderCount() + 1);
         customer.setLastOrderId(invoice.getId());
         customer.setLastOrderNo(invoice.getInvoiceNo());
@@ -170,14 +174,19 @@ public class CustomerProfileService {
             return;
         }
         CustomerProfile customer = existingCustomer.get();
-        BigDecimal gstDue = normalizedPhone != null
-                ? invoiceRepository.getOutstandingByTenantAndPhone(tenantId, normalizedPhone, normalizedName)
-                : invoiceRepository.getOutstandingByTenantAndCustomerName(tenantId, normalizedName);
-        BigDecimal nonGstDue = normalizedPhone != null
-                ? nonGstInvoiceRepository.getOutstandingByTenantAndPhone(tenantId, normalizedPhone, normalizedName)
-                : nonGstInvoiceRepository.getOutstandingByTenantAndCustomerName(tenantId, normalizedName);
-        customer.applyOutstandingAmount(gstDue.add(nonGstDue));
+        customer.applyOutstandingAmount(calculateOutstanding(tenantId, normalizedPhone, normalizedName));
         customerProfileRepository.save(customer);
+    }
+
+    private BigDecimal calculateOutstanding(Long tenantId, String phone, String name) {
+        BigDecimal gstDue = phone != null
+                ? invoiceRepository.getOutstandingByTenantAndPhone(tenantId, phone, name)
+                : invoiceRepository.getOutstandingByTenantAndCustomerName(tenantId, name);
+        BigDecimal nonGstDue = phone != null
+                ? nonGstInvoiceRepository.getOutstandingByTenantAndPhone(tenantId, phone, name)
+                : nonGstInvoiceRepository.getOutstandingByTenantAndCustomerName(tenantId, name);
+        return (gstDue == null ? BigDecimal.ZERO : gstDue)
+                .add(nonGstDue == null ? BigDecimal.ZERO : nonGstDue);
     }
 
     public List<CustomerProfile> listByTenant(Long tenantId) {
@@ -201,21 +210,9 @@ public class CustomerProfileService {
             }
             String phone = normalizePhone(customer.getPhone());
             String name = normalizeCustomerName(customer.getCustomerName());
-            BigDecimal gstDue;
-            BigDecimal nonGstDue;
-            if (phone != null) {
-                gstDue = invoiceRepository.getOutstandingByTenantAndPhone(tenantId, phone, name);
-                nonGstDue = nonGstInvoiceRepository.getOutstandingByTenantAndPhone(tenantId, phone, name);
-            } else if (name != null) {
-                gstDue = invoiceRepository.getOutstandingByTenantAndCustomerName(tenantId, name);
-                nonGstDue = nonGstInvoiceRepository.getOutstandingByTenantAndCustomerName(tenantId, name);
-            } else {
-                gstDue = BigDecimal.ZERO;
-                nonGstDue = BigDecimal.ZERO;
-            }
-            gstDue = gstDue == null ? BigDecimal.ZERO : gstDue;
-            nonGstDue = nonGstDue == null ? BigDecimal.ZERO : nonGstDue;
-            customer.applyOutstandingAmount(gstDue.add(nonGstDue));
+            customer.applyOutstandingAmount(phone == null && name == null
+                    ? BigDecimal.ZERO
+                    : calculateOutstanding(tenantId, phone, name));
         }
         customers.sort(Comparator.comparing(
                 CustomerProfile::getUpdatedAt,
@@ -291,7 +288,8 @@ public class CustomerProfileService {
             throw new AccessDeniedException("Access denied");
         }
         return customerProfileRepository.findById(id)
-                .filter(customer -> customer.getTenantId() != null && customer.getTenantId().equals(tenantId));
+                .filter(customer -> customer.getTenantId() != null && customer.getTenantId().equals(tenantId))
+                .map(this::applyCurrentOutstanding);
     }
 
     public Optional<CustomerProfile> findByPhone(Long tenantId, String phone) {
@@ -302,7 +300,17 @@ public class CustomerProfileService {
         if (normalizedPhone == null || normalizedPhone.isBlank()) {
             return Optional.empty();
         }
-        return customerProfileRepository.findByTenantIdAndPhone(tenantId, normalizedPhone);
+        return customerProfileRepository.findByTenantIdAndPhone(tenantId, normalizedPhone)
+                .map(this::applyCurrentOutstanding);
+    }
+
+    private CustomerProfile applyCurrentOutstanding(CustomerProfile customer) {
+        String phone = normalizePhone(customer.getPhone());
+        String name = normalizeCustomerName(customer.getCustomerName());
+        customer.applyOutstandingAmount(phone == null && name == null
+                ? BigDecimal.ZERO
+                : calculateOutstanding(customer.getTenantId(), phone, name));
+        return customer;
     }
 
     @Transactional
@@ -333,7 +341,10 @@ public class CustomerProfileService {
             customer.setGstNumber(request.getGstNumber());
         }
         if (request.getPhone() != null && !request.getPhone().isBlank()) {
-            customer.setPhone(normalizePhone(request.getPhone()));
+            String phone = normalizePhone(request.getPhone());
+            if (phone != null) {
+                customer.setPhone(phone);
+            }
         }
         if (request.getEmail() != null && !request.getEmail().isBlank()) {
             customer.setEmail(normalizeEmail(request.getEmail()));
@@ -424,7 +435,7 @@ public class CustomerProfileService {
             return null;
         }
         String normalized = phone.trim();
-        return normalized.isBlank() ? null : normalized;
+        return normalized.isBlank() || normalized.matches("0+") ? null : normalized;
     }
 
     private String normalizeCustomerName(String customerName) {

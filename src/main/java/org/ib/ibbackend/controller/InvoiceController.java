@@ -492,7 +492,7 @@ public class InvoiceController {
         }
 
         if ("PAID".equals(normalizedStatus)) {
-            return grandTotal == null ? baseAmount : grandTotal.max(baseAmount);
+            return grandTotal == null ? baseAmount : grandTotal.max(BigDecimal.ZERO);
         }
 
         if ("PENDING".equals(normalizedStatus)) {
@@ -507,7 +507,7 @@ public class InvoiceController {
     }
 
     private String normalizePaymentIntent(String status, String paymentStatus) {
-        String candidate = status != null ? status : paymentStatus;
+        String candidate = paymentStatus != null && !paymentStatus.isBlank() ? paymentStatus : status;
         if (candidate == null || candidate.isBlank()) {
             return null;
         }

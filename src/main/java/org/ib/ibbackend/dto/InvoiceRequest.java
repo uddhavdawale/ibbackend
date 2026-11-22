@@ -10,7 +10,7 @@ public class InvoiceRequest {
     private String paymentMethod;
     private String status;
     private String paymentStatus;
-    private BigDecimal paidAmount = BigDecimal.ZERO;
+    private BigDecimal paidAmount;
     private BigDecimal amountPaid;
     private BigDecimal receivedAmount;
     private BigDecimal previousBalance;
@@ -31,7 +31,7 @@ public class InvoiceRequest {
         this.customerName = customerName;
         this.customerPhone = customerPhone;
         this.paymentMethod = paymentMethod;
-        this.paidAmount = paidAmount == null ? BigDecimal.ZERO : paidAmount;
+        this.paidAmount = paidAmount;
         this.status = status;
         this.items = items;
     }
@@ -64,7 +64,7 @@ public class InvoiceRequest {
         }
         return BigDecimal.ZERO;
     }
-    public void setPaidAmount(BigDecimal paidAmount) { this.paidAmount = paidAmount == null ? BigDecimal.ZERO : paidAmount; }
+    public void setPaidAmount(BigDecimal paidAmount) { this.paidAmount = paidAmount; }
 
     public BigDecimal getAmountPaid() { return amountPaid == null ? getPaidAmount() : amountPaid; }
     public void setAmountPaid(BigDecimal amountPaid) { this.amountPaid = amountPaid; }

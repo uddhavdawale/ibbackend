@@ -90,8 +90,9 @@ class NonGstInvoiceServiceTest {
         request.setCustomerName("Walk-in Customer");
         request.setCustomerPhone("0000000000");
         request.setPaymentMethod("UPI");
-        request.setPaymentStatus("paid");
-        request.setStatus("paid");
+        request.setPaymentStatus("partial");
+        request.setStatus("partial");
+        request.setReceivedAmount(new BigDecimal("125.00"));
         request.setBillType("non-gst");
         request.setIsGstInvoice(false);
         request.setItems(List.of(item));
@@ -103,6 +104,9 @@ class NonGstInvoiceServiceTest {
         assertEquals(new BigDecimal("300.00"), saved.getSubtotal());
         assertEquals(new BigDecimal("0.00"), saved.getGstAmount());
         assertEquals(new BigDecimal("300.00"), saved.getGrandTotal());
+        assertEquals(new BigDecimal("125.00"), saved.getPaidAmount());
+        assertEquals("PARTIAL", saved.getPaymentStatus());
+        assertEquals("PENDING", saved.getStatus());
         assertTrue(saved.getInvoiceNo().matches("INV-\\d{12}-\\d{4}"));
         assertEquals(8, product.getQuantity());
         assertEquals(7, saved.getTenant().getId());

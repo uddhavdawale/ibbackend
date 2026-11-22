@@ -12,7 +12,7 @@ public class NonGstInvoiceRequest {
     private String status;
     private String billType;
     private Boolean isGstInvoice;
-    private BigDecimal paidAmount = BigDecimal.ZERO;
+    private BigDecimal paidAmount;
     private BigDecimal amountPaid;
     private BigDecimal receivedAmount;
     private BigDecimal previousBalance;

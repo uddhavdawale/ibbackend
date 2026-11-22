@@ -178,10 +178,9 @@ public class PaymentCollectionService {
             BigDecimal newPaid = nonGstInvoice.getPaidAmount().subtract(amount).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
             nonGstInvoice.setPaidAmount(newPaid);
             if (!"CANCELLED".equalsIgnoreCase(nonGstInvoice.getStatus())) {
-                String newStatus = newPaid.compareTo(nonGstInvoice.getGrandTotal()) >= 0
-                        ? "PAID" : newPaid.signum() > 0 ? "PARTIAL" : "PENDING";
-                nonGstInvoice.setPaymentStatus(newStatus);
-                nonGstInvoice.setStatus(newStatus);
+                String paymentStatus = resolvePaymentStatus(newPaid, nonGstInvoice.getGrandTotal());
+                nonGstInvoice.setPaymentStatus(paymentStatus);
+                nonGstInvoice.setStatus("PAID".equals(paymentStatus) ? "PAID" : "PENDING");
             }
             nonGstInvoiceRepository.save(nonGstInvoice);
             nonGstInvoiceRepository.flush();
@@ -360,9 +359,9 @@ public class PaymentCollectionService {
             customerProfileService.refreshLedgerForInvoice(invoice);
         } else {
             nonGstInvoice.setPaidAmount(newPaidAmount);
-            String newStatus = newPaidAmount.compareTo(total) >= 0 ? "PAID" : "PARTIAL";
-            nonGstInvoice.setPaymentStatus(newStatus);
-            nonGstInvoice.setStatus(newStatus);
+            String paymentStatus = resolvePaymentStatus(newPaidAmount, total);
+            nonGstInvoice.setPaymentStatus(paymentStatus);
+            nonGstInvoice.setStatus("PAID".equals(paymentStatus) ? "PAID" : "PENDING");
             nonGstInvoiceRepository.save(nonGstInvoice);
             nonGstInvoiceRepository.flush();
             customerProfileService.refreshLedgerForInvoice(nonGstInvoice);
@@ -370,6 +369,13 @@ public class PaymentCollectionService {
         auditLogService.success("PAYMENT_RECEIVED", record.getReceiptNo(),
                 "Payment collected against invoice " + invoiceNumber(invoice, nonGstInvoice));
         return toPaymentView(record);
+    }
+
+    private String resolvePaymentStatus(BigDecimal paidAmount, BigDecimal totalAmount) {
+        if (totalAmount.compareTo(BigDecimal.ZERO) > 0 && paidAmount.compareTo(totalAmount) >= 0) {
+            return "PAID";
+        }
+        return paidAmount.signum() > 0 ? "PARTIAL" : "PENDING";
     }
 
     private PaymentRecord record(Invoice invoice, NonGstInvoice nonGstInvoice, Integer tenantId,

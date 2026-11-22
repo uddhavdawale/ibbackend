@@ -3,6 +3,7 @@ package org.ib.ibbackend.controller;
 import org.ib.ibbackend.dto.InvoiceRequest;
 import org.ib.ibbackend.dto.LoginRequest;
 import org.ib.ibbackend.dto.LoginResponse;
+import org.ib.ibbackend.dto.NonGstInvoiceRequest;
 import org.ib.ibbackend.dto.RefreshTokenResponse;
 import org.ib.ibbackend.entity.Invoice;
 import org.ib.ibbackend.entity.InvoiceItem;
@@ -199,7 +200,7 @@ class FrontendContractContractTest {
         request.setCustomerPhone("0000000000");
         request.setPaymentMethod("UPI");
         request.setStatus("PAID");
-        request.setPaidAmount(new BigDecimal("50.00"));
+        request.setPaidAmount(new BigDecimal("150.00"));
 
         InvoiceItem item = new InvoiceItem();
         item.setProductId(10L);
@@ -219,6 +220,30 @@ class FrontendContractContractTest {
         assertThat(saved.getPaymentStatus()).isEqualTo(Invoice.PaymentStatus.PAID);
         assertThat(saved.getStatus()).isEqualTo(Invoice.InvoiceStatus.PAID);
         assertThat(saved.getInvoiceNo()).matches("INV-\\d{12}-\\d{4}");
+    }
+
+    @Test
+    void invoiceRequestAliasesShouldPreserveReceivedAmounts() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+
+        InvoiceRequest gstRequest = mapper.readValue(
+                "{\"receivedAmount\":40.00}", InvoiceRequest.class);
+        NonGstInvoiceRequest nonGstRequest = mapper.readValue(
+                "{\"amountPaid\":25.50}", NonGstInvoiceRequest.class);
+
+        assertThat(gstRequest.getPaidAmount()).isEqualByComparingTo("40.00");
+        assertThat(nonGstRequest.getPaidAmount()).isEqualByComparingTo("25.50");
+    }
+
+    @Test
+    void partialPaymentStatusShouldTakePrecedenceOverPendingInvoiceStatus() {
+        InvoiceController controller = new InvoiceController();
+
+        BigDecimal paidAmount = ReflectionTestUtils.invokeMethod(
+                controller, "resolvePaidAmount", new BigDecimal("100.00"),
+                new BigDecimal("40.00"), "PENDING", "PARTIAL");
+
+        assertThat(paidAmount).isEqualByComparingTo("40.00");
     }
 
     @Test

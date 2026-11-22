@@ -148,6 +148,44 @@ class PaymentCollectionServiceTest {
         service.collectNonGstPayment(4L, request("30.00", "request-1"));
 
         assertEquals(new BigDecimal("50.00"), invoice.getPaidAmount());
+        assertEquals("PARTIAL", invoice.getPaymentStatus());
+        assertEquals("PENDING", invoice.getStatus());
+        verify(nonGstInvoiceRepository).save(invoice);
+        verify(customerProfileService).refreshLedgerForInvoice(invoice);
+    }
+
+    @Test
+    void nonGstRefundUsesSamePartialPaymentStatusesAsGst() {
+        User owner = collector(7, "store_admin");
+        Tenant tenant = owner.getTenant();
+        NonGstInvoice invoice = new NonGstInvoice();
+        invoice.setId(4L);
+        invoice.setInvoiceNo("NG-4");
+        invoice.setTenant(tenant);
+        invoice.setGrandTotal(new BigDecimal("100.00"));
+        invoice.setPaidAmount(new BigDecimal("50.00"));
+        invoice.setPaymentStatus("PARTIAL");
+        invoice.setStatus("PENDING");
+        PaymentRecord original = new PaymentRecord();
+        original.setNonGstInvoice(invoice);
+        original.setAmount(new BigDecimal("50.00"));
+        original.setMethod("CASH");
+        original.setStatus("RECEIVED");
+        original.setSource("COLLECTION");
+        original.setReceiptNo("RCPT-original");
+        authenticate(owner);
+        when(paymentRepository.findByTenant_IdAndIdempotencyKey(7, "refund-1")).thenReturn(Optional.empty());
+        when(paymentRepository.findByIdAndTenantId(10L, 7)).thenReturn(Optional.of(original));
+        when(nonGstInvoiceRepository.findByIdAndTenantIdForUpdate(4L, 7L)).thenReturn(Optional.of(invoice));
+        when(paymentRepository.findByIdAndTenantIdForUpdate(10L, 7)).thenReturn(Optional.of(original));
+        when(paymentRepository.sumRefundsForPayment(10L, 7)).thenReturn(BigDecimal.ZERO);
+        when(paymentRepository.save(any(PaymentRecord.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.refundPayment(10L, refundRequest("20.00", "refund-1"));
+
+        assertEquals(new BigDecimal("30.00"), invoice.getPaidAmount());
+        assertEquals("PARTIAL", invoice.getPaymentStatus());
+        assertEquals("PENDING", invoice.getStatus());
         verify(nonGstInvoiceRepository).save(invoice);
         verify(customerProfileService).refreshLedgerForInvoice(invoice);
     }

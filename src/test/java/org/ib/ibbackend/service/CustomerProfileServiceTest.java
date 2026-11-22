@@ -4,6 +4,7 @@ import org.ib.ibbackend.dto.CustomerProfileRequest;
 import org.ib.ibbackend.dto.CustomerInvoiceRecord;
 import org.ib.ibbackend.entity.CustomerProfile;
 import org.ib.ibbackend.entity.Invoice;
+import org.ib.ibbackend.entity.NonGstInvoice;
 import org.ib.ibbackend.entity.Tenant;
 import org.ib.ibbackend.repository.CustomerProfileRepository;
 import org.ib.ibbackend.repository.InvoiceRepository;
@@ -20,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -42,6 +44,10 @@ class CustomerProfileServiceTest {
         when(customerProfileRepository.findByTenantIdAndPhone(7L, "9999999999")).thenReturn(Optional.of(existing));
         when(invoiceRepository.findByTenantIdAndCustomerPhone(7L, "9999999999")).thenReturn(List.of());
         when(invoiceRepository.findByTenantIdAndCustomerEmail(7L, "ravi@test.com")).thenReturn(List.of());
+        when(invoiceRepository.getOutstandingByTenantAndPhone(7L, "9999999999", "Ravi"))
+                .thenReturn(new BigDecimal("300.00"));
+        when(nonGstInvoiceRepository.getOutstandingByTenantAndPhone(7L, "9999999999", "Ravi"))
+                .thenReturn(BigDecimal.ZERO);
         when(customerProfileRepository.save(any(CustomerProfile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         CustomerProfileService service = new CustomerProfileService(customerProfileRepository, invoiceRepository, nonGstInvoiceRepository);
@@ -95,7 +101,7 @@ class CustomerProfileServiceTest {
     }
 
     @Test
-    void shouldKeepPreviousOutstandingBalanceWhenAddingNewInvoiceDue() {
+    void shouldDeriveCustomerBalanceFromAllInvoiceBalancesWhenAddingInvoice() {
         CustomerProfileRepository customerProfileRepository = mock(CustomerProfileRepository.class);
         InvoiceRepository invoiceRepository = mock(InvoiceRepository.class);
         NonGstInvoiceRepository nonGstInvoiceRepository = mock(NonGstInvoiceRepository.class);
@@ -109,6 +115,10 @@ class CustomerProfileServiceTest {
         existing.setOutstandingBalance(new BigDecimal("11599.02"));
 
         when(customerProfileRepository.findByTenantIdAndPhone(12L, "9876543210")).thenReturn(Optional.of(existing));
+        when(invoiceRepository.getOutstandingByTenantAndPhone(12L, "9876543210", "Sandip"))
+                .thenReturn(new BigDecimal("23198.04"));
+        when(nonGstInvoiceRepository.getOutstandingByTenantAndPhone(12L, "9876543210", "Sandip"))
+                .thenReturn(BigDecimal.ZERO);
         when(customerProfileRepository.save(any(CustomerProfile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         CustomerProfileService service = new CustomerProfileService(customerProfileRepository, invoiceRepository, nonGstInvoiceRepository);
@@ -132,6 +142,103 @@ class CustomerProfileServiceTest {
         assertEquals(new BigDecimal("11599.02").add(new BigDecimal("11599.02")), updated.getDueBalance());
         assertEquals(updated.getDueBalance(), updated.getBalanceDue());
         assertEquals(updated.getDueBalance(), updated.getOutstandingBalance());
+    }
+
+    @Test
+    void shouldClearStaleCustomerBalanceWhenAllInvoicesArePaid() {
+        CustomerProfileRepository customerProfileRepository = mock(CustomerProfileRepository.class);
+        InvoiceRepository invoiceRepository = mock(InvoiceRepository.class);
+        NonGstInvoiceRepository nonGstInvoiceRepository = mock(NonGstInvoiceRepository.class);
+        CustomerProfile existing = new CustomerProfile();
+        existing.setTenantId(7L);
+        existing.setCustomerName("Ravi");
+        existing.setPhone("9999999999");
+        existing.setDueBalance(new BigDecimal("500.00"));
+
+        when(customerProfileRepository.findByTenantIdAndPhone(7L, "9999999999")).thenReturn(Optional.of(existing));
+        when(invoiceRepository.getOutstandingByTenantAndPhone(7L, "9999999999", "Ravi"))
+                .thenReturn(BigDecimal.ZERO);
+        when(nonGstInvoiceRepository.getOutstandingByTenantAndPhone(7L, "9999999999", "Ravi"))
+                .thenReturn(BigDecimal.ZERO);
+        when(customerProfileRepository.save(any(CustomerProfile.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CustomerProfileService service = new CustomerProfileService(
+                customerProfileRepository, invoiceRepository, nonGstInvoiceRepository);
+        Invoice invoice = new Invoice();
+        invoice.setId(111L);
+        invoice.setInvoiceNo("INV-PAID");
+        invoice.setCustomerName("Ravi");
+        invoice.setCustomerPhone("9999999999");
+        invoice.setGrandTotal(new BigDecimal("500.00"));
+        invoice.setPaidAmount(new BigDecimal("500.00"));
+        Tenant tenant = new Tenant();
+        tenant.setId(7);
+        invoice.setTenant(tenant);
+
+        CustomerProfile saved = service.syncFromInvoice(invoice);
+
+        assertEquals(BigDecimal.ZERO, saved.getDueBalance());
+        assertEquals(BigDecimal.ZERO, saved.getOutstandingBalance());
+    }
+
+    @Test
+    void shouldNotReusePlaceholderPhoneBalanceForNewGstOrNonGstCustomers() {
+        CustomerProfileRepository customerProfileRepository = mock(CustomerProfileRepository.class);
+        InvoiceRepository invoiceRepository = mock(InvoiceRepository.class);
+        NonGstInvoiceRepository nonGstInvoiceRepository = mock(NonGstInvoiceRepository.class);
+        CustomerProfile oldPlaceholderCustomer = new CustomerProfile();
+        oldPlaceholderCustomer.setId(99L);
+        oldPlaceholderCustomer.setTenantId(7L);
+        oldPlaceholderCustomer.setCustomerName("Old customer");
+        oldPlaceholderCustomer.setPhone("0000000000");
+        oldPlaceholderCustomer.setDueBalance(new BigDecimal("2201.20"));
+
+        when(customerProfileRepository.findByTenantIdAndPhone(7L, "0000000000"))
+                .thenReturn(Optional.of(oldPlaceholderCustomer));
+        when(customerProfileRepository.findByTenantIdAndCustomerName(7L, "New GST customer"))
+                .thenReturn(Optional.empty());
+        when(customerProfileRepository.findByTenantIdAndCustomerName(7L, "New non-GST customer"))
+                .thenReturn(Optional.empty());
+        when(customerProfileRepository.save(any(CustomerProfile.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(invoiceRepository.getOutstandingByTenantAndCustomerName(7L, "New GST customer"))
+                .thenReturn(BigDecimal.ZERO);
+        when(invoiceRepository.getOutstandingByTenantAndCustomerName(7L, "New non-GST customer"))
+                .thenReturn(BigDecimal.ZERO);
+        when(nonGstInvoiceRepository.getOutstandingByTenantAndCustomerName(7L, "New GST customer"))
+                .thenReturn(BigDecimal.ZERO);
+        when(nonGstInvoiceRepository.getOutstandingByTenantAndCustomerName(7L, "New non-GST customer"))
+                .thenReturn(BigDecimal.ZERO);
+
+        CustomerProfileService service = new CustomerProfileService(
+                customerProfileRepository, invoiceRepository, nonGstInvoiceRepository);
+        Tenant tenant = new Tenant();
+        tenant.setId(7);
+        Invoice gstInvoice = new Invoice();
+        gstInvoice.setCustomerName("New GST customer");
+        gstInvoice.setCustomerPhone("0000000000");
+        gstInvoice.setGrandTotal(new BigDecimal("100.00"));
+        gstInvoice.setPaidAmount(new BigDecimal("100.00"));
+        gstInvoice.setTenant(tenant);
+        NonGstInvoice nonGstInvoice = new NonGstInvoice();
+        nonGstInvoice.setCustomerName("New non-GST customer");
+        nonGstInvoice.setCustomerPhone("0000000000");
+        nonGstInvoice.setGrandTotal(new BigDecimal("100.00"));
+        nonGstInvoice.setPaidAmount(new BigDecimal("100.00"));
+        nonGstInvoice.setTenant(tenant);
+
+        CustomerProfile gstProfile = service.syncFromInvoice(gstInvoice);
+        CustomerProfile nonGstProfile = service.syncFromNonGstInvoice(nonGstInvoice);
+
+        assertEquals("New GST customer", gstProfile.getCustomerName());
+        assertEquals("New non-GST customer", nonGstProfile.getCustomerName());
+        assertNull(gstProfile.getPhone());
+        assertNull(nonGstProfile.getPhone());
+        assertEquals(BigDecimal.ZERO, gstProfile.getDueBalance());
+        assertEquals(BigDecimal.ZERO, nonGstProfile.getDueBalance());
+        assertEquals("Old customer", oldPlaceholderCustomer.getCustomerName());
+        assertEquals(new BigDecimal("2201.20"), oldPlaceholderCustomer.getDueBalance());
+        verify(customerProfileRepository, never()).findByTenantIdAndPhone(7L, "0000000000");
     }
 
     @Test
@@ -200,6 +307,31 @@ class CustomerProfileServiceTest {
         assertEquals(1, customers.size());
         assertEquals(new BigDecimal("70.00"), customers.get(0).getDueBalance());
         assertEquals(customers.get(0).getDueBalance(), customers.get(0).getOutstandingBalance());
+    }
+
+    @Test
+    void shouldReturnCurrentOutstandingBalanceFromCustomerPhoneLookup() {
+        CustomerProfileRepository repository = mock(CustomerProfileRepository.class);
+        InvoiceRepository invoiceRepository = mock(InvoiceRepository.class);
+        NonGstInvoiceRepository nonGstInvoiceRepository = mock(NonGstInvoiceRepository.class);
+        CustomerProfile customer = new CustomerProfile();
+        customer.setTenantId(7L);
+        customer.setCustomerName("Ravi");
+        customer.setPhone("9999999999");
+        customer.setDueBalance(new BigDecimal("130.00"));
+        when(repository.findByTenantIdAndPhone(7L, "9999999999")).thenReturn(Optional.of(customer));
+        when(invoiceRepository.getOutstandingByTenantAndPhone(7L, "9999999999", "Ravi"))
+                .thenReturn(new BigDecimal("40.00"));
+        when(nonGstInvoiceRepository.getOutstandingByTenantAndPhone(7L, "9999999999", "Ravi"))
+                .thenReturn(new BigDecimal("30.00"));
+
+        CustomerProfileService service = new CustomerProfileService(
+                repository, invoiceRepository, nonGstInvoiceRepository);
+
+        CustomerProfile result = service.findByPhone(7L, "9999999999").orElseThrow();
+
+        assertEquals(new BigDecimal("70.00"), result.getDueBalance());
+        assertEquals(result.getDueBalance(), result.getOutstandingBalance());
     }
 
     @Test
