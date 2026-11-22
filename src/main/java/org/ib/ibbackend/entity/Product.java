@@ -37,6 +37,12 @@ public class Product {
     @Column(name = "hsn_sac")
     private String hsnSac;
 
+    @Transient
+    private BigDecimal gstRate;
+
+    @Transient
+    private String gstRateStatus;
+
     @Column(name = "set_size", length = 100)
     private String setSize = "1";
 
@@ -137,6 +143,22 @@ public class Product {
 
     public void setHsnSac(String hsnSac) {
         this.hsnSac = hsnSac;
+    }
+
+    public BigDecimal getGstRate() {
+        return gstRate;
+    }
+
+    public void setGstRate(BigDecimal gstRate) {
+        this.gstRate = gstRate;
+    }
+
+    public String getGstRateStatus() {
+        return gstRateStatus;
+    }
+
+    public void setGstRateStatus(String gstRateStatus) {
+        this.gstRateStatus = gstRateStatus;
     }
 
     public String getSetSize() {

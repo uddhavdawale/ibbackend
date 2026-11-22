@@ -18,9 +18,12 @@ public record ProductResponse(
         String category,
         LocalDateTime createdAt,
         Integer tenantId,
-        Long uploadedById
+        Long uploadedById,
+        BigDecimal gstRate,
+        String gstRateStatus
 ) {
     public ProductResponse(Long id, String name, String sku, BigDecimal price, Integer tenantId) {
-        this(id, name, sku, null, 0, 0, price, price, "1", null, 0, "General", LocalDateTime.now(), tenantId, null);
+        this(id, name, sku, null, 0, 0, price, price, "1", null, 0, "General",
+                LocalDateTime.now(), tenantId, null, null, "HSN_MISSING");
     }
 }

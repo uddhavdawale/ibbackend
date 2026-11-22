@@ -45,6 +45,7 @@ public class NonGstInvoiceService {
     private final InventorySecurityService inventorySecurityService;
     private final CustomerProfileService customerProfileService;
     private final PaymentCollectionService paymentCollectionService;
+    private final InvoiceIdempotencyService invoiceIdempotencyService;
 
     @Autowired
     public NonGstInvoiceService(
@@ -54,7 +55,8 @@ public class NonGstInvoiceService {
             AuditLogService auditLogService,
             InventorySecurityService inventorySecurityService,
             CustomerProfileService customerProfileService,
-            PaymentCollectionService paymentCollectionService
+            PaymentCollectionService paymentCollectionService,
+            InvoiceIdempotencyService invoiceIdempotencyService
     ) {
         this.nonGstInvoiceRepository = nonGstInvoiceRepository;
         this.productRepository = productRepository;
@@ -63,6 +65,7 @@ public class NonGstInvoiceService {
         this.inventorySecurityService = inventorySecurityService;
         this.customerProfileService = customerProfileService;
         this.paymentCollectionService = paymentCollectionService;
+        this.invoiceIdempotencyService = invoiceIdempotencyService;
     }
 
     public NonGstInvoiceService(
@@ -70,11 +73,16 @@ public class NonGstInvoiceService {
             ProductRepository productRepository,
             UserRepository userRepository
     ) {
-        this(nonGstInvoiceRepository, productRepository, userRepository, null, null, null, null);
+        this(nonGstInvoiceRepository, productRepository, userRepository, null, null, null, null, null);
     }
 
     @Transactional
     public NonGstInvoice createNonGstInvoice(NonGstInvoiceRequest request) {
+        return createNonGstInvoice(request, null).invoice();
+    }
+
+    @Transactional
+    public CreationResult createNonGstInvoice(NonGstInvoiceRequest request, String idempotencyKey) {
         Long tenantId = TenantContext.getCurrentTenant();
         if (tenantId == null) {
             throw new AccessDeniedException("Access denied");
@@ -85,6 +93,15 @@ public class NonGstInvoiceService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Authenticated user does not belong to current tenant");
         }
         validateRequest(request);
+        if (idempotencyKey != null) {
+            if (invoiceIdempotencyService == null) {
+                throw new IllegalStateException("Invoice idempotency service is not configured");
+            }
+            var replay = invoiceIdempotencyService.claimNonGstInvoice(tenantId, idempotencyKey, request);
+            if (replay.isPresent()) {
+                return new CreationResult(replay.get(), true);
+            }
+        }
         InvoiceIssuerResolver.Snapshot issuer =
                 InvoiceIssuerResolver.resolve(currentUser, request.getIssuerType(), false);
 
@@ -203,6 +220,9 @@ public class NonGstInvoiceService {
 
         invoice.setItems(items);
         NonGstInvoice saved = nonGstInvoiceRepository.save(invoice);
+        if (idempotencyKey != null) {
+            invoiceIdempotencyService.completeNonGstInvoice(tenantId, idempotencyKey, saved.getId());
+        }
         if (paymentCollectionService != null) {
             paymentCollectionService.recordInitialPayment(saved, currentUser);
         }
@@ -212,7 +232,10 @@ public class NonGstInvoiceService {
         if (auditLogService != null) {
             auditLogService.success("INVOICE_CREATE", saved.getInvoiceNo(), "Non-GST invoice created");
         }
-        return saved;
+        return new CreationResult(saved, false);
+    }
+
+    public record CreationResult(NonGstInvoice invoice, boolean replayed) {
     }
 
     public Page<Map<String, Object>> listNonGstInvoices(int page, int size, String search, String billType) {

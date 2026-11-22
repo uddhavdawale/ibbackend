@@ -1,6 +1,7 @@
 package org.ib.ibbackend.dto;
 
 import org.ib.ibbackend.entity.InvoiceItem;
+import com.fasterxml.jackson.annotation.JsonAlias;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -20,6 +21,12 @@ public class InvoiceRequest {
     private String billType;
     private Boolean isGstInvoice;
     private String issuerType;
+    private String taxPricingMode;
+    @JsonAlias("placeOfSupplyStateCode")
+    private String placeOfSupplyState;
+    private BigDecimal subtotal;
+    private BigDecimal gstAmount;
+    private BigDecimal grandTotal;
     private List<InvoiceItem> items;
 
     // ✅ Jackson needs no-arg constructor
@@ -93,6 +100,21 @@ public class InvoiceRequest {
 
     public String getIssuerType() { return issuerType; }
     public void setIssuerType(String issuerType) { this.issuerType = issuerType; }
+
+    public String getTaxPricingMode() { return taxPricingMode; }
+    public void setTaxPricingMode(String taxPricingMode) { this.taxPricingMode = taxPricingMode; }
+
+    public String getPlaceOfSupplyState() { return placeOfSupplyState; }
+    public void setPlaceOfSupplyState(String placeOfSupplyState) { this.placeOfSupplyState = placeOfSupplyState; }
+
+    public BigDecimal getSubtotal() { return subtotal; }
+    public void setSubtotal(BigDecimal subtotal) { this.subtotal = subtotal; }
+
+    public BigDecimal getGstAmount() { return gstAmount; }
+    public void setGstAmount(BigDecimal gstAmount) { this.gstAmount = gstAmount; }
+
+    public BigDecimal getGrandTotal() { return grandTotal; }
+    public void setGrandTotal(BigDecimal grandTotal) { this.grandTotal = grandTotal; }
 
     public List<InvoiceItem> getItems() { return items; }
     public void setItems(List<InvoiceItem> items) { this.items = items; }

@@ -11,11 +11,14 @@ import org.ib.ibbackend.entity.Product;
 import org.ib.ibbackend.entity.Tenant;
 import org.ib.ibbackend.entity.User;
 import org.ib.ibbackend.filter.TenantContext;
+import org.ib.ibbackend.entity.HsnTaxRate;
+import org.ib.ibbackend.repository.HsnTaxRateRepository;
 import org.ib.ibbackend.repository.InvoiceRepository;
 import org.ib.ibbackend.repository.NonGstInvoiceRepository;
 import org.ib.ibbackend.repository.ProductRepository;
 import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.service.JwtService;
+import org.ib.ibbackend.service.HsnTaxRateService;
 import org.ib.ibbackend.service.PaymentCollectionService;
 import org.ib.ibbackend.service.PasswordSecurityService;
 import org.ib.ibbackend.service.RefreshTokenService;
@@ -177,6 +180,8 @@ class FrontendContractContractTest {
 
         Tenant tenant = new Tenant();
         tenant.setId(7);
+        tenant.setState("Maharashtra");
+        tenant.setGstin("27ABCDE1234F1Z5");
         User currentUser = new User();
         currentUser.setId(22L);
         currentUser.setEmail("owner@example.com");
@@ -187,13 +192,21 @@ class FrontendContractContractTest {
         product.setId(10L);
         product.setName("Notebook");
         product.setSku("NOTEBOOK-007");
+        product.setHsnSac("1234");
         product.setPrice(new BigDecimal("100.00"));
         product.setQuantity(10);
+        product.setTenant(tenant);
 
-        when(((ProductRepository) ReflectionTestUtils.getField(controller, "productRepository")).findById(10L))
-                .thenReturn(Optional.of(product));
+        ProductRepository productRepository = (ProductRepository) ReflectionTestUtils.getField(controller, "productRepository");
+        when(productRepository.findByIdAndTenantIdForUpdate(10L, 7L)).thenReturn(Optional.of(product));
         when(((InvoiceRepository) ReflectionTestUtils.getField(controller, "invoiceRepository")).save(any(Invoice.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+        HsnTaxRateRepository hsnTaxRateRepository = mock(HsnTaxRateRepository.class);
+        HsnTaxRate hsnTaxRate = new HsnTaxRate();
+        hsnTaxRate.setHsnCode("1234");
+        hsnTaxRate.setGstRate(new BigDecimal("5.00"));
+        when(hsnTaxRateRepository.findAllByHsnCodeIn(any())).thenReturn(List.of(hsnTaxRate));
+        ReflectionTestUtils.setField(controller, "hsnTaxRateService", new HsnTaxRateService(hsnTaxRateRepository));
 
         InvoiceRequest request = new InvoiceRequest();
         request.setCustomerName("Walk-in Customer");
@@ -201,13 +214,15 @@ class FrontendContractContractTest {
         request.setPaymentMethod("UPI");
         request.setStatus("PAID");
         request.setPaidAmount(new BigDecimal("150.00"));
+        request.setTaxPricingMode("exclusive");
+        request.setPlaceOfSupplyState("27");
 
         InvoiceItem item = new InvoiceItem();
         item.setProductId(10L);
         item.setName("Notebook");
         item.setSku("NOTEBOOK-007");
-        item.setHsn("9983");
-        item.setGstRate(5);
+        item.setHsn("1234");
+        item.setGstRate(new BigDecimal("99"));
         item.setPrice(new BigDecimal("100.00"));
         item.setQty(1);
         request.setItems(List.of(item));

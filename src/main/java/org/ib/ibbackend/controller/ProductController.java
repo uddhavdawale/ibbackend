@@ -9,6 +9,7 @@ import org.ib.ibbackend.entity.Tenant;
 import org.ib.ibbackend.filter.TenantContext;
 import org.ib.ibbackend.repository.ProductRepository;
 import org.ib.ibbackend.service.AuditLogService;
+import org.ib.ibbackend.service.HsnTaxRateService;
 import org.ib.ibbackend.service.InventorySecurityService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -35,6 +36,9 @@ public class ProductController {
 
     @Autowired
     private InventorySecurityService inventorySecurityService;
+
+    @Autowired
+    private HsnTaxRateService hsnTaxRateService;
 
     @Autowired(required = false)
     private AuditLogService auditLogService;
@@ -74,18 +78,20 @@ public class ProductController {
             products = productRepository.findByTenantId(tenantId, pageable);
         }
 
-        Page<ProductResponse> response = products.map(this::mapToResponse);
+        Map<String, java.math.BigDecimal> rates = hsnTaxRateService.ratesForProducts(products.getContent());
+        Page<ProductResponse> response = products.map(product -> mapToResponse(product, rates));
 
         return ResponseEntity.ok(response);
     }
 
-    private ProductResponse mapToResponse(Product product) {
+    private ProductResponse mapToResponse(Product product, Map<String, java.math.BigDecimal> rates) {
         Integer tenantId = product.getTenant() != null ? product.getTenant().getId() : null;
+        String hsn = HsnTaxRateService.normalizeCode(product.getHsnSac());
         return new ProductResponse(
                 product.getId(),
                 product.getName(),
                 product.getSku(),
-                product.getHsnSac(),
+                hsn,
                 product.getQuantity(),
                 product.getMinStock(),
                 product.getPrice(),
@@ -96,7 +102,9 @@ public class ProductController {
                 product.getCategory(),
                 product.getCreatedAt(),
                 tenantId,
-                product.getUploadedBy() != null ? product.getUploadedBy().getId() : null
+                product.getUploadedBy() != null ? product.getUploadedBy().getId() : null,
+                rates.get(hsn),
+                hsnTaxRateService.rateStatus(hsn, rates)
         );
     }
     @PostMapping
@@ -128,9 +136,7 @@ public class ProductController {
             ));
         }
         entity.setSku(resolvedCode);
-        if (normalizeSku(entity.getHsnSac()) == null) {
-            entity.setHsnSac(resolvedCode);
-        }
+        entity.setHsnSac(normalizeSku(entity.getHsnSac()));
 
         String poNumber = entity.getPoNumber() == null ? "" : entity.getPoNumber().trim();
         if (productRepository.existsBySkuAndPoNumberAndTenantId(resolvedCode, poNumber, tenantId)) {
@@ -218,7 +224,7 @@ public class ProductController {
                     existing.setExpiryDate(requestData.getExpiryDate());
                     existing.setPrice(requestData.getPrice());
                     existing.setMrp(requestData.getMrp() != null ? requestData.getMrp() : requestData.getPrice());
-                    existing.setHsnSac(normalizeSku(requestData.getHsnSac()) != null ? normalizeSku(requestData.getHsnSac()) : resolvedCode);
+                    existing.setHsnSac(normalizeSku(requestData.getHsnSac()));
                     existing.setSetSize(requestData.getSetSize() == null || requestData.getSetSize().isBlank() ? "1" : requestData.getSetSize());
                     existing.setPoNumber(requestData.getPoNumber());
                     if (requestData.getSalesCount() != null && requestData.getSalesCount() >= 0) {

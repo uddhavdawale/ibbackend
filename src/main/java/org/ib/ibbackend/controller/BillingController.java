@@ -1,16 +1,16 @@
 package org.ib.ibbackend.controller;
-
-
 import org.ib.ibbackend.entity.Product;
 import org.ib.ibbackend.filter.TenantContext;
 import org.ib.ibbackend.repository.ProductRepository;
 import org.ib.ibbackend.service.AuditLogService;
+import org.ib.ibbackend.service.HsnTaxRateService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
+import java.util.Map;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -23,6 +23,9 @@ public class BillingController {
 
     @Autowired
     private ProductRepository productRepository;
+
+    @Autowired
+    private HsnTaxRateService hsnTaxRateService;
 
     @Autowired(required = false)
     private AuditLogService auditLogService;
@@ -47,6 +50,13 @@ public class BillingController {
         int safeSize = size <= 0 ? 50 : Math.min(size, MAX_BILLING_PRODUCTS_PAGE_SIZE);
         Pageable pageable = PageRequest.of(safePage, safeSize, Sort.by("id").descending());
         auditSuccess("ADMIN_ACTION", "billing-products", "Billing products fetched");
-        return ResponseEntity.ok(productRepository.findByTenantId(tenantId, pageable));
+        Page<Product> products = productRepository.findByTenantId(tenantId, pageable);
+        Map<String, java.math.BigDecimal> rates = hsnTaxRateService.ratesForProducts(products.getContent());
+        products.getContent().forEach(product -> {
+            String hsn = HsnTaxRateService.normalizeCode(product.getHsnSac());
+            product.setGstRate(rates.get(hsn));
+            product.setGstRateStatus(hsnTaxRateService.rateStatus(hsn, rates));
+        });
+        return ResponseEntity.ok(products);
     }
 }

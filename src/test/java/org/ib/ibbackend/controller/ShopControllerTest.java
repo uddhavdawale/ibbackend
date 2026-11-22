@@ -119,15 +119,17 @@ class ShopControllerTest {
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(tenantAssetService.availableTypes(tenant)).thenReturn(Set.of());
 
-        controller.updateCurrentShop(
+        Map<?, ?> responseShop = (Map<?, ?>) controller.updateCurrentShop(
                 null, null, null, "Maharashtra", "27abcde1234f1z5",
-                "0201234567", "billing@example.com", null, null, null, null);
+                "0201234567", "billing@example.com", null, null, null, null)
+                .getBody().get("shop");
 
         assertEquals("Maharashtra", tenant.getState());
         assertEquals("27ABCDE1234F1Z5", tenant.getGstin());
         assertEquals("0201234567", tenant.getPhone());
         assertEquals("billing@example.com", tenant.getEmail());
         assertEquals("owner-login@example.com", user.getEmail());
+        assertEquals(true, responseShop.get("canCreateGstInvoice"));
     }
 
     @Test
@@ -162,6 +164,7 @@ class ShopControllerTest {
         assertEquals("Retail Group", orgSummary.get("name"));
         assertEquals("27ABCDE1234F1Z5", orgSummary.get("gstin"));
         assertEquals("Main Road, Pune, Maharashtra, 411001", orgSummary.get("registeredAddress"));
+        assertEquals(false, shop.get("canCreateGstInvoice"));
     }
 
     private void authenticate() {

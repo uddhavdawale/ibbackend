@@ -10,6 +10,7 @@ import org.ib.ibbackend.repository.TenantRepository;
 import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.security.UserRolePolicy;
 import org.ib.ibbackend.service.AuditLogService;
+import org.ib.ibbackend.service.InvoiceIssuerResolver;
 import org.ib.ibbackend.service.TenantAssetService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ContentDisposition;
@@ -86,6 +87,7 @@ public class ShopController {
         shop.put("email", firstNonBlank(tenant != null ? tenant.getEmail() : null, user.getEmail()));
         shop.put("phone", firstNonBlank(tenant != null ? tenant.getPhone() : null, user.getPhone()));
         shop.put("gstin", firstNonBlank(tenant != null ? tenant.getGstin() : null, user.getGstin()));
+        shop.put("canCreateGstInvoice", InvoiceIssuerResolver.hasValidStoreGstin(user));
         shop.put("pan", user.getPan());
         shop.put("role", user.getRole());
         shop.put("address", firstNonBlank(tenant != null ? tenant.getAddress() : null, user.getAddress()));

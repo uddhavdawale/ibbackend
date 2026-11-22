@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.annotation.Nulls;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 @Entity
 @Table(name = "invoice_items")
@@ -32,7 +33,7 @@ public class InvoiceItem {
     private String hsn;
 
     @Column(name = "gst_rate")
-    private Integer gstRate;
+    private BigDecimal gstRate;
 
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal price=BigDecimal.ZERO;
@@ -50,12 +51,33 @@ public class InvoiceItem {
     @Column(name = "item_total", precision = 10, scale = 2)
     private BigDecimal itemTotal;
 
+    @Column(name = "entered_price", precision = 10, scale = 2)
+    private BigDecimal enteredPrice;
+
+    @Column(name = "tax_pricing_mode", length = 16)
+    private String taxPricingMode;
+
+    @Column(precision = 10, scale = 2)
+    private BigDecimal cgst = BigDecimal.ZERO;
+
+    @Column(precision = 10, scale = 2)
+    private BigDecimal sgst = BigDecimal.ZERO;
+
+    @Column(precision = 10, scale = 2)
+    private BigDecimal igst = BigDecimal.ZERO;
+
     // Default constructor (JPA required)
     public InvoiceItem() {}
 
     // Constructor for creating from Product + Cart data
     public InvoiceItem(Long productId, String name, String sku, String hsn,
                        Integer gstRate, BigDecimal price, Integer qty) {
+        this(productId, name, sku, hsn,
+                gstRate == null ? null : BigDecimal.valueOf(gstRate), price, qty);
+    }
+
+    public InvoiceItem(Long productId, String name, String sku, String hsn,
+                       BigDecimal gstRate, BigDecimal price, Integer qty) {
         this.productId = productId;
         this.name = name;
         this.sku = sku;
@@ -72,11 +94,11 @@ public class InvoiceItem {
     public void calculateTotals() {
         BigDecimal safePrice = this.price == null ? BigDecimal.ZERO : this.price;
         int safeQty = this.qty == null ? 0 : this.qty;
-        int safeGstRate = this.gstRate == null ? 0 : this.gstRate;
+        BigDecimal safeGstRate = this.gstRate == null ? BigDecimal.ZERO : this.gstRate;
 
         this.itemSubtotal = safePrice.multiply(BigDecimal.valueOf(safeQty));
-        this.itemGst = this.itemSubtotal.multiply(BigDecimal.valueOf(safeGstRate))
-                .divide(BigDecimal.valueOf(100), 2, BigDecimal.ROUND_HALF_UP);
+        this.itemGst = this.itemSubtotal.multiply(safeGstRate)
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
         this.itemTotal = this.itemSubtotal.add(this.itemGst);
     }
 
@@ -97,10 +119,49 @@ public class InvoiceItem {
     public String getHsn() { return hsn; }
     public void setHsn(String hsn) { this.hsn = hsn; }
 
-    public Integer getGstRate() { return gstRate; }
-    public void setGstRate(Integer gstRate) {
+    public BigDecimal getGstRate() { return gstRate; }
+    public void setGstRate(BigDecimal gstRate) {
         this.gstRate = gstRate;
-        calculateTotals();  // Recalculate on GST change
+        calculateTotals();
+    }
+
+    public BigDecimal getEnteredPrice() { return enteredPrice; }
+    public void setEnteredPrice(BigDecimal enteredPrice) { this.enteredPrice = enteredPrice; }
+
+    public String getTaxPricingMode() { return taxPricingMode; }
+    public void setTaxPricingMode(String taxPricingMode) { this.taxPricingMode = taxPricingMode; }
+
+    public BigDecimal getCgst() { return cgst; }
+    public void setCgst(BigDecimal cgst) { this.cgst = cgst; }
+    public BigDecimal getCgstAmount() { return cgst; }
+    public void setCgstAmount(BigDecimal cgst) { this.cgst = cgst; }
+
+    public BigDecimal getSgst() { return sgst; }
+    public void setSgst(BigDecimal sgst) { this.sgst = sgst; }
+    public BigDecimal getSgstAmount() { return sgst; }
+    public void setSgstAmount(BigDecimal sgst) { this.sgst = sgst; }
+
+    public BigDecimal getIgst() { return igst; }
+    public void setIgst(BigDecimal igst) { this.igst = igst; }
+    public BigDecimal getIgstAmount() { return igst; }
+    public void setIgstAmount(BigDecimal igst) { this.igst = igst; }
+
+    public BigDecimal getTaxableAmount() { return itemSubtotal; }
+    public void setTaxableAmount(BigDecimal taxableAmount) { this.itemSubtotal = taxableAmount; }
+
+    public BigDecimal getTaxAmount() { return itemGst; }
+    public void setTaxAmount(BigDecimal taxAmount) { this.itemGst = taxAmount; }
+
+    public void setCalculatedAmounts(BigDecimal taxableAmount, BigDecimal taxAmount, BigDecimal totalAmount) {
+        this.itemSubtotal = taxableAmount;
+        this.itemGst = taxAmount;
+        this.itemTotal = totalAmount;
+    }
+
+    public void setTaxComponents(BigDecimal cgst, BigDecimal sgst, BigDecimal igst) {
+        this.cgst = cgst;
+        this.sgst = sgst;
+        this.igst = igst;
     }
 
     public BigDecimal getPrice() { return price; }

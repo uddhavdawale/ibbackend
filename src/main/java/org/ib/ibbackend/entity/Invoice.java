@@ -38,6 +38,12 @@ public class Invoice {
     private BigDecimal gstAmount;
     private BigDecimal grandTotal;
 
+    @Column(name = "tax_pricing_mode", length = 16)
+    private String taxPricingMode;
+
+    @Column(name = "place_of_supply_state", length = 100)
+    private String placeOfSupplyState;
+
     @Column(nullable = false)
     private BigDecimal paidAmount = BigDecimal.ZERO;
 
@@ -140,6 +146,12 @@ public class Invoice {
     public BigDecimal getGrandTotal() { return grandTotal; }
     public void setGrandTotal(BigDecimal grandTotal) { this.grandTotal = grandTotal; }
 
+    public String getTaxPricingMode() { return taxPricingMode; }
+    public void setTaxPricingMode(String taxPricingMode) { this.taxPricingMode = taxPricingMode; }
+
+    public String getPlaceOfSupplyState() { return placeOfSupplyState; }
+    public void setPlaceOfSupplyState(String placeOfSupplyState) { this.placeOfSupplyState = placeOfSupplyState; }
+
     public BigDecimal getPaidAmount() { return paidAmount == null ? BigDecimal.ZERO : paidAmount; }
     public void setPaidAmount(BigDecimal paidAmount) { this.paidAmount = paidAmount == null ? BigDecimal.ZERO : paidAmount; }
 
@@ -236,7 +248,7 @@ public class Invoice {
             item.setName(name);
             item.setQty(qty);
             item.setPrice(price);
-            item.setGstRate(gstRate);
+            item.setGstRate(gstRate == null ? null : BigDecimal.valueOf(gstRate));
             return item;
         }
     }

@@ -47,6 +47,7 @@ class InvoiceIssuerResolverTest {
         organization.setPhone("0201234567");
         organization.setEmail("billing@example.com");
         user.getTenant().setOrganization(organization);
+        user.getTenant().setGstin("27ABCDE1234F1Z5");
 
         InvoiceIssuerResolver.Snapshot snapshot =
                 InvoiceIssuerResolver.resolve(user, "ORGANIZATION", true);
@@ -70,6 +71,19 @@ class InvoiceIssuerResolverTest {
         User user = retailerWithTenant("Store One");
         Organization organization = new Organization();
         organization.setName("Retail Group");
+        organization.setAddress("Main Road");
+        user.getTenant().setOrganization(organization);
+
+        assertThrows(ResponseStatusException.class,
+                () -> InvoiceIssuerResolver.resolve(user, "ORGANIZATION", true));
+    }
+
+    @Test
+    void rejectsOrganizationGstInvoiceWhenStoreHasNoGstin() {
+        User user = retailerWithTenant("Store One");
+        Organization organization = new Organization();
+        organization.setName("Retail Group");
+        organization.setGstin("27ABCDE1234F1Z5");
         organization.setAddress("Main Road");
         user.getTenant().setOrganization(organization);
 
@@ -111,7 +125,7 @@ class InvoiceIssuerResolverTest {
     }
 
     @Test
-    void storeIssuerDoesNotUseStaffPersonalDetailsWhenStoreProfileIsIncomplete() {
+    void storeIssuerDoesNotUseStaffPersonalGstinForStoreRegistration() {
         User user = retailerWithTenant("Store One");
         user.setRole("store_manager");
         user.setPhone("staff-phone");
@@ -119,8 +133,10 @@ class InvoiceIssuerResolverTest {
         user.setGstin("27ABCDE1234F1Z5");
         user.setAddress("Staff address");
 
-        InvoiceIssuerResolver.Snapshot snapshot = InvoiceIssuerResolver.resolve(user, "STORE", true);
+        assertThrows(ResponseStatusException.class,
+                () -> InvoiceIssuerResolver.resolve(user, "STORE", true));
 
+        InvoiceIssuerResolver.Snapshot snapshot = InvoiceIssuerResolver.resolve(user, "STORE");
         assertNull(snapshot.gstin());
         assertNull(snapshot.address());
         assertNull(snapshot.phone());

@@ -11,6 +11,7 @@ import org.ib.ibbackend.filter.TenantContext;
 import org.ib.ibbackend.repository.NonGstInvoiceRepository;
 import org.ib.ibbackend.repository.ProductRepository;
 import org.ib.ibbackend.repository.UserRepository;
+import org.ib.ibbackend.service.InvoiceIdempotencyService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -28,7 +29,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class NonGstInvoiceServiceTest {
@@ -149,6 +153,57 @@ class NonGstInvoiceServiceTest {
         request.setItems(List.of(item));
 
         assertThrows(ResponseStatusException.class, () -> service.createNonGstInvoice(request));
+    }
+
+    @Test
+    void replaysNonGstInvoiceForSameIdempotencyKeyWithoutRepeatingProductLookup() {
+        NonGstInvoiceRepository invoiceRepository = mock(NonGstInvoiceRepository.class);
+        ProductRepository productRepository = mock(ProductRepository.class);
+        UserRepository userRepository = mock(UserRepository.class);
+        InvoiceIdempotencyService idempotencyService = mock(InvoiceIdempotencyService.class);
+        NonGstInvoiceService service = new NonGstInvoiceService(
+                invoiceRepository, productRepository, userRepository,
+                null, null, null, null, idempotencyService);
+
+        Tenant tenant = new Tenant();
+        tenant.setId(7);
+        User user = new User();
+        user.setId(22L);
+        user.setTenant(tenant);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("owner@example.com", null));
+        TenantContext.setCurrentTenant(7L);
+        when(userRepository.findByEmail("owner@example.com")).thenReturn(Optional.of(user));
+
+        NonGstInvoice existing = new NonGstInvoice();
+        existing.setInvoiceNo("INV-EXISTING");
+        when(idempotencyService.claimNonGstInvoice(eq(7L), eq("retry-key"), any()))
+                .thenReturn(Optional.of(existing));
+
+        NonGstInvoiceRequestItem item = new NonGstInvoiceRequestItem();
+        item.setProductId(12L);
+        item.setPrice(new BigDecimal("10.00"));
+        item.setQty(1);
+        item.setGstRate(0);
+        item.setTaxAmount(BigDecimal.ZERO);
+        item.setCgst(BigDecimal.ZERO);
+        item.setSgst(BigDecimal.ZERO);
+        item.setIgst(BigDecimal.ZERO);
+        NonGstInvoiceRequest request = new NonGstInvoiceRequest();
+        request.setCustomerName("Walk-in");
+        request.setBillType("non-gst");
+        request.setIsGstInvoice(false);
+        request.setPaymentStatus("PENDING");
+        request.setStatus("PENDING");
+        request.setItems(List.of(item));
+
+        NonGstInvoiceService.CreationResult result =
+                service.createNonGstInvoice(request, "retry-key");
+
+        assertTrue(result.replayed());
+        assertEquals(existing, result.invoice());
+        verify(productRepository, never()).findByIdAndTenantIdForUpdate(any(), any());
+        verify(invoiceRepository, never()).save(any(NonGstInvoice.class));
     }
 
     @Test

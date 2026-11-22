@@ -22,8 +22,19 @@ public class NonGstInvoiceController {
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<Map<String, Object>> createNonGstInvoice(@RequestBody NonGstInvoiceRequest request) {
-        NonGstInvoice saved = nonGstInvoiceService.createNonGstInvoice(request);
+    public ResponseEntity<Map<String, Object>> createNonGstInvoice(
+            @RequestBody NonGstInvoiceRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        NonGstInvoiceService.CreationResult result =
+                nonGstInvoiceService.createNonGstInvoice(request, idempotencyKey);
+        return createResponse(result.invoice(), result.replayed());
+    }
+
+    public ResponseEntity<Map<String, Object>> createNonGstInvoice(NonGstInvoiceRequest request) {
+        return createResponse(nonGstInvoiceService.createNonGstInvoice(request), false);
+    }
+
+    private ResponseEntity<Map<String, Object>> createResponse(NonGstInvoice saved, boolean replayed) {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("success", true);
         response.put("invoiceNo", saved.getInvoiceNo());
@@ -35,7 +46,11 @@ public class NonGstInvoiceController {
         response.put("issuerPhone", saved.getIssuerPhone());
         response.put("issuerEmail", saved.getIssuerEmail());
         response.put("message", "Non-GST invoice saved successfully");
-        return ResponseEntity.ok(response);
+        ResponseEntity.BodyBuilder responseBuilder = ResponseEntity.ok();
+        if (replayed) {
+            responseBuilder.header("Idempotency-Replayed", "true");
+        }
+        return responseBuilder.body(response);
     }
 
     @GetMapping

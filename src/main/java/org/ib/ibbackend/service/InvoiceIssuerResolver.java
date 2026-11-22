@@ -28,6 +28,12 @@ public final class InvoiceIssuerResolver {
                 ? "STORE"
                 : requestedType.trim().toUpperCase(Locale.ROOT);
         Tenant tenant = user.getTenant();
+        String storeGstin = resolveStoreGstin(user);
+        if (gstInvoice && storeGstin == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "A valid store GSTIN is required for GST invoices; use non-GST billing or update the store profile");
+        }
 
         if ("STORE".equals(type)) {
             boolean storeProfileOwner = isStoreProfileOwner(user.getRole());
@@ -35,14 +41,15 @@ public final class InvoiceIssuerResolver {
             return new Snapshot(
                     type,
                     hasText(name) ? name.trim() : null,
-                    normalizeGstin(firstNonBlank(tenant.getGstin(), storeProfileOwner ? user.getGstin() : null)),
+                    storeGstin,
                     formatAddress(
                             firstNonBlank(tenant.getAddress(), storeProfileOwner ? user.getAddress() : null),
                             firstNonBlank(tenant.getCity(), storeProfileOwner ? user.getCity() : null),
                             tenant.getState(),
                             firstNonBlank(tenant.getPincode(), storeProfileOwner ? user.getPincode() : null)),
                     contactValue(firstNonBlank(tenant.getPhone(), storeProfileOwner ? user.getPhone() : null), 32),
-                    contactValue(firstNonBlank(tenant.getEmail(), storeProfileOwner ? user.getEmail() : null), 255));
+                    contactValue(firstNonBlank(tenant.getEmail(), storeProfileOwner ? user.getEmail() : null), 255),
+                    tenant.getState());
         }
 
         if ("ORGANIZATION".equals(type)) {
@@ -71,10 +78,23 @@ public final class InvoiceIssuerResolver {
                     gstin,
                     address,
                     organization.getPhone(),
-                    organization.getEmail());
+                    organization.getEmail(),
+                    organization.getState());
         }
 
         throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "issuerType must be STORE or ORGANIZATION");
+    }
+
+    public static boolean hasValidStoreGstin(User user) {
+        return user != null && user.getTenant() != null && resolveStoreGstin(user) != null;
+    }
+
+    private static String resolveStoreGstin(User user) {
+        Tenant tenant = user.getTenant();
+        boolean storeProfileOwner = isStoreProfileOwner(user.getRole());
+        return normalizeGstin(firstNonBlank(
+                tenant.getGstin(),
+                storeProfileOwner ? user.getGstin() : null));
     }
 
     private static boolean hasText(String value) {
@@ -127,6 +147,7 @@ public final class InvoiceIssuerResolver {
             String gstin,
             String address,
             String phone,
-            String email) {
+            String email,
+            String state) {
     }
 }

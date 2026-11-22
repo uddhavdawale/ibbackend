@@ -15,6 +15,7 @@ import org.ib.ibbackend.service.AuditLogService;
 import org.ib.ibbackend.service.InventorySecurityService;
 import org.ib.ibbackend.service.InvoiceNumberGenerator;
 import org.ib.ibbackend.service.InvoiceIssuerResolver;
+import org.ib.ibbackend.service.HsnTaxRateService;
 import org.ib.ibbackend.service.PaymentCollectionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,6 +36,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 @RestController
@@ -45,6 +48,46 @@ public class InvoiceController {
     private static final Logger log = LoggerFactory.getLogger(InvoiceController.class);
     private static final int MAX_INVOICE_PAGE_SIZE = 200;
     private static final int MAX_INVOICE_SEARCH_LENGTH = 100;
+    private static final Map<String, String> GST_STATE_CODES = Map.ofEntries(
+            Map.entry("01", "01"), Map.entry("jammuandkashmir", "01"),
+            Map.entry("02", "02"), Map.entry("himachalpradesh", "02"),
+            Map.entry("03", "03"), Map.entry("punjab", "03"),
+            Map.entry("04", "04"), Map.entry("chandigarh", "04"),
+            Map.entry("05", "05"), Map.entry("uttarakhand", "05"), Map.entry("uttaranchal", "05"),
+            Map.entry("06", "06"), Map.entry("haryana", "06"),
+            Map.entry("07", "07"), Map.entry("delhi", "07"), Map.entry("nationalcapitalterritoryofdelhi", "07"),
+            Map.entry("08", "08"), Map.entry("rajasthan", "08"),
+            Map.entry("09", "09"), Map.entry("uttarpradesh", "09"),
+            Map.entry("10", "10"), Map.entry("bihar", "10"),
+            Map.entry("11", "11"), Map.entry("sikkim", "11"),
+            Map.entry("12", "12"), Map.entry("arunachalpradesh", "12"),
+            Map.entry("13", "13"), Map.entry("nagaland", "13"),
+            Map.entry("14", "14"), Map.entry("manipur", "14"),
+            Map.entry("15", "15"), Map.entry("mizoram", "15"),
+            Map.entry("16", "16"), Map.entry("tripura", "16"),
+            Map.entry("17", "17"), Map.entry("meghalaya", "17"),
+            Map.entry("18", "18"), Map.entry("assam", "18"),
+            Map.entry("19", "19"), Map.entry("westbengal", "19"),
+            Map.entry("20", "20"), Map.entry("jharkhand", "20"),
+            Map.entry("21", "21"), Map.entry("odisha", "21"), Map.entry("orissa", "21"),
+            Map.entry("22", "22"), Map.entry("chhattisgarh", "22"),
+            Map.entry("23", "23"), Map.entry("madhyapradesh", "23"),
+            Map.entry("24", "24"), Map.entry("gujarat", "24"),
+            Map.entry("25", "25"), Map.entry("damananddiu", "25"),
+            Map.entry("26", "26"), Map.entry("dadranagarhavelianddamananddiu", "26"),
+            Map.entry("dadranagarhaveli", "26"),
+            Map.entry("27", "27"), Map.entry("maharashtra", "27"),
+            Map.entry("28", "28"), Map.entry("andhrapradeshbefore2014", "28"),
+            Map.entry("29", "29"), Map.entry("karnataka", "29"),
+            Map.entry("30", "30"), Map.entry("goa", "30"),
+            Map.entry("31", "31"), Map.entry("lakshadweep", "31"),
+            Map.entry("32", "32"), Map.entry("kerala", "32"),
+            Map.entry("33", "33"), Map.entry("tamilnadu", "33"),
+            Map.entry("34", "34"), Map.entry("puducherry", "34"), Map.entry("pondicherry", "34"),
+            Map.entry("35", "35"), Map.entry("andamanandnicobarislands", "35"),
+            Map.entry("36", "36"), Map.entry("telangana", "36"),
+            Map.entry("37", "37"), Map.entry("andhrapradesh", "37"),
+            Map.entry("38", "38"), Map.entry("ladakh", "38"));
 
     @Autowired
     private InvoiceRepository invoiceRepository;
@@ -63,10 +106,16 @@ public class InvoiceController {
     @Autowired(required = false)
     private InventorySecurityService inventorySecurityService;
 
+    @Autowired
+    private HsnTaxRateService hsnTaxRateService;
+
     @Autowired(required = false)
     private org.ib.ibbackend.service.CustomerProfileService customerProfileService;
     @Autowired
     private PaymentCollectionService paymentCollectionService;
+
+    @Autowired
+    private org.ib.ibbackend.service.InvoiceIdempotencyService invoiceIdempotencyService;
 
     private void auditSuccess(String action, String resourceId, String detail) {
         if (auditLogService != null) {
@@ -99,10 +148,9 @@ public class InvoiceController {
             tenantScoped = Optional.empty();
         }
 
-        Product product = tenantScoped.orElseGet(() -> productRepository.findById(item.getProductId())
-            .filter(p -> p.getTenant() == null
-                || p.getTenant().getId() == Math.toIntExact(tenantId))
-            .orElseThrow(() -> new RuntimeException("Product not found for tenant: " + item.getProductId())));
+        Product product = tenantScoped.orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.BAD_REQUEST,
+                "Product not found for tenant: " + item.getProductId()));
         int currentQty = product.getQuantity() == null ? 0 : product.getQuantity();
         int newStock = currentQty - item.getQty();
         if (newStock < 0) {
@@ -132,10 +180,9 @@ public class InvoiceController {
             tenantScoped = Optional.empty();
         }
 
-        Product product = tenantScoped.orElseGet(() -> productRepository.findById(item.getProductId())
-            .filter(p -> p.getTenant() == null
-                || p.getTenant().getId() == Math.toIntExact(tenantId))
-            .orElseThrow(() -> new RuntimeException("Product not found for tenant: " + item.getProductId())));
+        Product product = tenantScoped.orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.BAD_REQUEST,
+                "Product not found for tenant: " + item.getProductId()));
         int currentQty = product.getQuantity() == null ? 0 : product.getQuantity();
         product.setQuantity(currentQty + restoreQty);
         productRepository.save(product);
@@ -329,7 +376,9 @@ public class InvoiceController {
 
     @PostMapping
     @Transactional
-    public ResponseEntity<?> createInvoice(@RequestBody InvoiceRequest invoiceRequest) {
+    public ResponseEntity<?> createInvoice(
+            @RequestBody InvoiceRequest invoiceRequest,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         try {
             if (invoiceRequest == null) {
                 throw new org.springframework.web.server.ResponseStatusException(
@@ -368,7 +417,8 @@ public class InvoiceController {
                     throw new org.springframework.web.server.ResponseStatusException(
                             org.springframework.http.HttpStatus.BAD_REQUEST, "Each item qty must be greater than zero");
                 }
-                if (item.getPrice() == null || item.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
+                BigDecimal enteredPrice = item.getEnteredPrice() == null ? item.getPrice() : item.getEnteredPrice();
+                if (enteredPrice == null || enteredPrice.compareTo(BigDecimal.ZERO) <= 0) {
                     throw new org.springframework.web.server.ResponseStatusException(
                             org.springframework.http.HttpStatus.BAD_REQUEST, "Each item price must be positive");
                 }
@@ -386,23 +436,143 @@ public class InvoiceController {
                     || currentUser.getTenant().getId() != Math.toIntExact(tenantId)) {
                 throw new org.springframework.security.access.AccessDeniedException("Access denied");
             }
+            if (idempotencyKey != null) {
+                if (invoiceIdempotencyService == null) {
+                    throw new IllegalStateException("Invoice idempotency service is not configured");
+                }
+                Optional<Invoice> replay = invoiceIdempotencyService.claimGstInvoice(
+                        tenantId, idempotencyKey, invoiceRequest);
+                if (replay.isPresent()) {
+                    return ResponseEntity.ok()
+                            .header("Idempotency-Replayed", "true")
+                            .body(replay.get());
+                }
+            }
             InvoiceIssuerResolver.Snapshot issuer =
                     InvoiceIssuerResolver.resolve(currentUser, invoiceRequest.getIssuerType(), true);
 
-            String invoiceNo = InvoiceNumberGenerator.generate();
+            String invoicePricingMode = resolvePricingMode(invoiceRequest.getTaxPricingMode(), "invoice");
+            String placeOfSupplyState = invoiceRequest.getPlaceOfSupplyState() == null
+                    ? null
+                    : invoiceRequest.getPlaceOfSupplyState().trim();
+            if (placeOfSupplyState == null || placeOfSupplyState.isBlank()) {
+                throw new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.BAD_REQUEST, "placeOfSupplyState is required");
+            }
+            boolean interState = isInterStateSupply(issuer.state(), issuer.gstin(), placeOfSupplyState);
 
-            for (InvoiceItem item : invoiceRequest.getItems()) {
-                deductStockForSale(item, invoiceNo, tenantId);
+            Map<Long, Product> productsById = new LinkedHashMap<>();
+            for (InvoiceItem submittedItem : invoiceRequest.getItems()) {
+                Product product = productRepository.findByIdAndTenantIdForUpdate(
+                                submittedItem.getProductId(), tenantId)
+                        .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(
+                                org.springframework.http.HttpStatus.BAD_REQUEST,
+                                "Product " + submittedItem.getProductId() + " not found for this tenant"));
+                productsById.put(submittedItem.getProductId(), product);
+            }
+            Map<String, BigDecimal> ratesByHsn = hsnTaxRateService.ratesForProducts(productsById.values());
+
+            List<InvoiceItem> invoiceItems = new java.util.ArrayList<>();
+            for (InvoiceItem submittedItem : invoiceRequest.getItems()) {
+                Product product = productsById.get(submittedItem.getProductId());
+                String productName = product.getName() == null ? "Product " + product.getId() : product.getName();
+                String hsn = HsnTaxRateService.normalizeCode(product.getHsnSac());
+                String itemLabel = productName + " (product " + product.getId() + ")";
+                if (!HsnTaxRateService.isValidCode(hsn)) {
+                    throw new org.springframework.web.server.ResponseStatusException(
+                            org.springframework.http.HttpStatus.BAD_REQUEST,
+                            itemLabel + " has a missing or invalid HSN/SAC code");
+                }
+                if (!hsn.equals(HsnTaxRateService.normalizeCode(submittedItem.getHsn()))) {
+                    throw new org.springframework.web.server.ResponseStatusException(
+                            org.springframework.http.HttpStatus.BAD_REQUEST,
+                            itemLabel + " HSN/SAC does not match the product record");
+                }
+                BigDecimal gstRate = ratesByHsn.get(hsn);
+                if (gstRate == null) {
+                    throw new org.springframework.web.server.ResponseStatusException(
+                            org.springframework.http.HttpStatus.BAD_REQUEST,
+                            itemLabel + " has no applicable GST rate in the HSN/SAC tax master");
+                }
+
+                BigDecimal enteredPrice = submittedItem.getEnteredPrice() == null
+                        ? submittedItem.getPrice()
+                        : submittedItem.getEnteredPrice();
+                BigDecimal catalogPrice = product.getPrice();
+                if (catalogPrice == null || catalogPrice.compareTo(BigDecimal.ZERO) <= 0) {
+                    throw new org.springframework.web.server.ResponseStatusException(
+                            org.springframework.http.HttpStatus.BAD_REQUEST,
+                            itemLabel + " has no valid catalogue price");
+                }
+                BigDecimal roundedCatalogPrice = catalogPrice.setScale(2, RoundingMode.HALF_UP);
+                if (enteredPrice == null
+                        || enteredPrice.setScale(2, RoundingMode.HALF_UP).compareTo(roundedCatalogPrice) != 0) {
+                    throw new org.springframework.web.server.ResponseStatusException(
+                            org.springframework.http.HttpStatus.BAD_REQUEST,
+                            itemLabel + " price does not match the current catalogue price");
+                }
+
+                String itemPricingMode = resolvePricingMode(submittedItem.getTaxPricingMode(), itemLabel);
+                if (submittedItem.getTaxPricingMode() == null || submittedItem.getTaxPricingMode().isBlank()) {
+                    itemPricingMode = invoicePricingMode;
+                } else if (!invoicePricingMode.equals(itemPricingMode)) {
+                    throw new org.springframework.web.server.ResponseStatusException(
+                            org.springframework.http.HttpStatus.BAD_REQUEST,
+                            itemLabel + " taxPricingMode must match the invoice taxPricingMode");
+                }
+                BigDecimal lineGross;
+                BigDecimal taxableAmount;
+                BigDecimal taxAmount;
+                if ("inclusive".equals(itemPricingMode)) {
+                    lineGross = roundedCatalogPrice.multiply(BigDecimal.valueOf(submittedItem.getQty()))
+                            .setScale(2, RoundingMode.HALF_UP);
+                    taxableAmount = lineGross.divide(
+                                    BigDecimal.ONE.add(gstRate.divide(BigDecimal.valueOf(100), 8, RoundingMode.HALF_UP)),
+                                    2,
+                                    RoundingMode.HALF_UP)
+                            .setScale(2, RoundingMode.HALF_UP);
+                    taxAmount = lineGross.subtract(taxableAmount).setScale(2, RoundingMode.HALF_UP);
+                } else {
+                    taxableAmount = roundedCatalogPrice.multiply(BigDecimal.valueOf(submittedItem.getQty()))
+                            .setScale(2, RoundingMode.HALF_UP);
+                    taxAmount = taxableAmount.multiply(gstRate)
+                            .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+                    lineGross = taxableAmount.add(taxAmount).setScale(2, RoundingMode.HALF_UP);
+                }
+
+                BigDecimal cgst = BigDecimal.ZERO.setScale(2);
+                BigDecimal sgst = BigDecimal.ZERO.setScale(2);
+                BigDecimal igst = BigDecimal.ZERO.setScale(2);
+                if (interState) {
+                    igst = taxAmount;
+                } else {
+                    cgst = taxAmount.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
+                    sgst = taxAmount.subtract(cgst).setScale(2, RoundingMode.HALF_UP);
+                }
+
+                BigDecimal taxableUnitPrice = "inclusive".equals(itemPricingMode)
+                        ? taxableAmount.divide(BigDecimal.valueOf(submittedItem.getQty()), 2, RoundingMode.HALF_UP)
+                        : roundedCatalogPrice;
+                InvoiceItem item = new InvoiceItem(
+                        product.getId(),
+                        productName,
+                        product.getSku(),
+                        hsn,
+                        gstRate,
+                        taxableUnitPrice,
+                        submittedItem.getQty());
+                item.setEnteredPrice(roundedCatalogPrice);
+                item.setTaxPricingMode(itemPricingMode);
+                item.setCalculatedAmounts(taxableAmount, taxAmount, lineGross);
+                item.setTaxComponents(cgst, sgst, igst);
+                invoiceItems.add(item);
             }
 
-            List<InvoiceItem> invoiceItems = invoiceRequest.getItems().stream()
-                    .map(dto -> {
-                        InvoiceItem item = new InvoiceItem(dto.getProductId(), dto.getName(),
-                                dto.getSku(), dto.getHsn(), dto.getGstRate(),
-                                dto.getPrice(), dto.getQty());
-                        return item;
-                    })
-                    .collect(Collectors.toList());
+            String invoiceNo = InvoiceNumberGenerator.generate();
+
+            for (InvoiceItem item : invoiceItems) {
+                deductStockForSale(item, invoiceNo, tenantId);
+            }
 
             BigDecimal subtotal = invoiceItems.stream()
                     .map(item -> item.getItemSubtotal() == null ? BigDecimal.ZERO : item.getItemSubtotal())
@@ -410,7 +580,10 @@ public class InvoiceController {
             BigDecimal gstAmount = invoiceItems.stream()
                     .map(item -> item.getItemGst() == null ? BigDecimal.ZERO : item.getItemGst())
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal grandTotal = subtotal.add(gstAmount).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal grandTotal = invoiceItems.stream()
+                    .map(item -> item.getItemTotal() == null ? BigDecimal.ZERO : item.getItemTotal())
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(2, RoundingMode.HALF_UP);
 
             BigDecimal providedPayment = resolveRequestAmount(invoiceRequest);
             BigDecimal paidAmount = resolvePaidAmount(
@@ -438,6 +611,8 @@ public class InvoiceController {
                     invoiceRequest.getPaymentMethod(), subtotal, gstAmount, grandTotal,
                     invoiceItems);
             invoice.setPaidAmount(paidAmount);
+            invoice.setTaxPricingMode(invoicePricingMode);
+            invoice.setPlaceOfSupplyState(placeOfSupplyState);
             invoice.setPaymentStatus(resolvePaymentStatus(paidAmount, grandTotal));
             invoice.setStatus(resolveInvoiceStatus(invoice.getPaymentStatus()));
             invoice.setIssuerType(issuer.type());
@@ -457,6 +632,9 @@ public class InvoiceController {
             }
 
             Invoice saved = invoiceRepository.save(invoice);
+            if (idempotencyKey != null) {
+                invoiceIdempotencyService.completeGstInvoice(tenantId, idempotencyKey, saved.getId());
+            }
             paymentCollectionService.recordInitialPayment(saved, currentUser);
             if (customerProfileService != null) {
                 customerProfileService.syncFromInvoice(saved);
@@ -472,6 +650,10 @@ public class InvoiceController {
         }
     }
 
+    public ResponseEntity<?> createInvoice(InvoiceRequest invoiceRequest) {
+        return createInvoice(invoiceRequest, null);
+    }
+
     private BigDecimal resolveRequestAmount(InvoiceRequest invoiceRequest) {
         BigDecimal candidate = invoiceRequest.getPaidAmount();
         if (candidate == null || candidate.compareTo(BigDecimal.ZERO) < 0) {
@@ -484,6 +666,51 @@ public class InvoiceController {
             candidate = BigDecimal.ZERO;
         }
         return candidate;
+    }
+
+    private String resolvePricingMode(String requestedMode, String label) {
+        if (requestedMode == null || requestedMode.isBlank()) {
+            return "exclusive";
+        }
+        String normalized = requestedMode.trim().toLowerCase(Locale.ROOT);
+        if (!"exclusive".equals(normalized) && !"inclusive".equals(normalized)) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    label + " taxPricingMode must be exclusive or inclusive");
+        }
+        return normalized;
+    }
+
+    private boolean isInterStateSupply(String sellerState, String sellerGstin, String placeOfSupplyState) {
+        String buyerCode = resolveGstStateCode(placeOfSupplyState);
+        if (buyerCode == null) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "placeOfSupplyState must be a valid Indian state name or GST state code");
+        }
+        String sellerCode;
+        if (sellerGstin != null && sellerGstin.matches(
+                "[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]")) {
+            sellerCode = resolveGstStateCode(sellerGstin.substring(0, 2));
+            if (sellerCode == null) {
+                throw new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.BAD_REQUEST,
+                        "Seller GSTIN contains an invalid GST state code");
+            }
+        } else {
+            sellerCode = resolveGstStateCode(sellerState);
+        }
+        if (sellerCode == null) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "Seller state is not configured; cannot determine GST tax components");
+        }
+        return !sellerCode.equals(buyerCode);
+    }
+
+    private String resolveGstStateCode(String state) {
+        return state == null ? null : GST_STATE_CODES.get(
+                state.trim().replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT));
     }
 
     private Invoice.PaymentStatus resolvePaymentStatus(BigDecimal paidAmount, BigDecimal grandTotal) {
