@@ -60,7 +60,8 @@ public class InvoiceService {
         BigDecimal gstAmount = req.getItems().stream()
                 .map(item -> item.getPrice()
                         .multiply(BigDecimal.valueOf(item.getQty()))
-                        .multiply(new BigDecimal(item.getGstRate()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP)))
+                        .multiply(item.getGstRate() == null ? BigDecimal.ZERO : item.getGstRate())
+                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP))
                 .collect(Collectors.reducing(BigDecimal.ZERO, BigDecimal::add));
 
         BigDecimal grandTotal = subtotal.add(gstAmount);
