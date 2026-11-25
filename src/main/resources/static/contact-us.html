@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7fb">
+  <title>Contact us | SmartShopOps</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #172033;
+      background: #f5f7fb;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-width: 320px;
+      min-height: 100vh;
+      margin: 0;
+      background:
+        radial-gradient(ellipse at 12% 5%, rgba(84, 105, 255, .09), transparent 35rem),
+        #f5f7fb;
+    }
+
+    a { color: inherit; }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 26px 28px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 11px;
+      color: #172033;
+      font-size: 15px;
+      font-weight: 750;
+      letter-spacing: -.02em;
+      text-decoration: none;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 36px;
+      height: 36px;
+      place-items: center;
+      border-radius: 12px;
+      background: #4e5cf5;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 800;
+      box-shadow: 0 7px 16px rgba(78, 92, 245, .2);
+    }
+
+    .top-link {
+      color: #5c6680;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .top-link:hover, .email-link:hover { color: #3948dc; }
+
+    main {
+      width: min(100% - 40px, 1024px);
+      margin: 32px auto 72px;
+    }
+
+    .eyebrow {
+      margin: 0 0 12px;
+      color: #4e5cf5;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(32px, 5vw, 48px);
+      letter-spacing: -.055em;
+      line-height: 1.08;
+    }
+
+    .intro {
+      max-width: 620px;
+      margin: 15px 0 32px;
+      color: #69738a;
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: .88fr 1.12fr;
+      gap: 20px;
+      align-items: stretch;
+    }
+
+    .info-panel, .form-panel {
+      border: 1px solid #e8ebf3;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, .94);
+      box-shadow: 0 18px 48px rgba(36, 48, 85, .07);
+    }
+
+    .info-panel {
+      display: flex;
+      flex-direction: column;
+      padding: 30px;
+      color: #fff;
+      background: linear-gradient(150deg, #303fce, #5362f5 70%, #7080ff);
+      border-color: transparent;
+    }
+
+    .info-panel h2 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: -.035em;
+    }
+
+    .info-panel > p {
+      margin: 10px 0 30px;
+      color: rgba(255, 255, 255, .78);
+      font-size: 14px;
+      line-height: 1.65;
+    }
+
+    .contact-method {
+      display: flex;
+      gap: 13px;
+      align-items: flex-start;
+      padding: 17px 0;
+      border-top: 1px solid rgba(255, 255, 255, .2);
+    }
+
+    .contact-icon {
+      display: grid;
+      flex: 0 0 38px;
+      width: 38px;
+      height: 38px;
+      place-items: center;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .14);
+      font-size: 17px;
+    }
+
+    .contact-label {
+      display: block;
+      margin: 1px 0 5px;
+      color: rgba(255, 255, 255, .7);
+      font-size: 12px;
+      font-weight: 650;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .email-link {
+      color: #fff;
+      font-size: 14px;
+      font-weight: 650;
+      overflow-wrap: anywhere;
+      text-decoration: none;
+    }
+
+    .reply-note {
+      margin-top: auto !important;
+      padding-top: 26px;
+      color: rgba(255, 255, 255, .72) !important;
+      font-size: 12px !important;
+    }
+
+    .form-panel { padding: 30px; }
+
+    .form-panel h2 {
+      margin: 0;
+      font-size: 21px;
+      letter-spacing: -.03em;
+    }
+
+    .form-description {
+      margin: 8px 0 23px;
+      color: #7a849a;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .field { min-width: 0; }
+    .field-full { grid-column: 1 / -1; }
+
+    label {
+      display: block;
+      margin-bottom: 7px;
+      color: #364057;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    input, textarea {
+      display: block;
+      width: 100%;
+      border: 1px solid #dfe4ef;
+      border-radius: 10px;
+      outline: none;
+      background: #fff;
+      color: #172033;
+      font: inherit;
+      font-size: 14px;
+      transition: border-color .15s, box-shadow .15s;
+    }
+
+    input { height: 44px; padding: 0 12px; }
+    textarea { min-height: 132px; padding: 12px; resize: vertical; }
+
+    input::placeholder, textarea::placeholder { color: #a4adbf; }
+
+    input:focus, textarea:focus {
+      border-color: #6875ff;
+      box-shadow: 0 0 0 3px rgba(78, 92, 245, .12);
+    }
+
+    .submit-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      align-items: center;
+      margin-top: 18px;
+    }
+
+    button {
+      min-height: 46px;
+      padding: 0 20px;
+      border: 0;
+      border-radius: 10px;
+      background: #4e5cf5;
+      color: #fff;
+      cursor: pointer;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      box-shadow: 0 8px 18px rgba(78, 92, 245, .2);
+    }
+
+    button:hover { background: #3e4de4; }
+    button:disabled { cursor: wait; opacity: .7; }
+
+    .privacy-note {
+      max-width: 230px;
+      color: #8a93a7;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .status {
+      min-height: 22px;
+      margin: 14px 0 0;
+      color: #3845c5;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .status.error { color: #b42318; }
+    .honeypot { position: absolute; left: -10000px; width: 1px; height: 1px; }
+
+    footer {
+      padding: 0 20px 30px;
+      color: #98a0b1;
+      font-size: 12px;
+      text-align: center;
+    }
+
+    @media (max-width: 720px) {
+      .topbar { padding: 18px 20px; }
+      main { width: min(100% - 28px, 560px); margin-top: 26px; }
+      .layout { grid-template-columns: 1fr; }
+      .info-panel { order: 2; min-height: 290px; }
+      .form-panel { order: 1; padding: 24px; }
+    }
+
+    @media (max-width: 420px) {
+      .form-grid { grid-template-columns: 1fr; }
+      .field-full { grid-column: auto; }
+      .info-panel { padding: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand" aria-label="SmartShopOps support">
+      <span class="brand-mark" aria-hidden="true">S</span>
+      <span>SmartShopOps</span>
+    </div>
+    <a class="top-link" href="mailto:gurushopops@outlook.com">Email support</a>
+  </header>
+
+  <main>
+    <p class="eyebrow">We’re here to help</p>
+    <h1>Let's get your shop moving.</h1>
+    <p class="intro">Questions about billing, stock, or getting started? Send us a message and our support team will get back to you.</p>
+
+    <section class="layout" aria-label="Contact support">
+      <aside class="info-panel">
+        <h2>Talk to our team</h2>
+        <p>Tell us what you need help with. We'll make sure your message reaches the right person.</p>
+        <div class="contact-method">
+          <span class="contact-icon" aria-hidden="true">@</span>
+          <div>
+            <span class="contact-label">Email us</span>
+            <a class="email-link" href="mailto:gurushopops@outlook.com">gurushopops@outlook.com</a>
+          </div>
+        </div>
+        <p class="reply-note">Prefer email? You can write to us directly at the address above.</p>
+      </aside>
+
+      <section class="form-panel" aria-labelledby="form-title">
+        <h2 id="form-title">Send us a message</h2>
+        <p class="form-description">Fill out the form and we’ll reply to your email address.</p>
+        <form id="contact-form">
+          <div class="honeypot" aria-hidden="true">
+            <label for="website">Leave this field empty</label>
+            <input id="website" name="website" type="text" tabindex="-1" autocomplete="off">
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="name">Your name *</label>
+              <input id="name" name="name" type="text" maxlength="100" autocomplete="name" required>
+            </div>
+            <div class="field">
+              <label for="email">Email address *</label>
+              <input id="email" name="email" type="email" maxlength="254" autocomplete="email" required>
+            </div>
+            <div class="field field-full">
+              <label for="phone">Phone number <span aria-hidden="true">(optional)</span></label>
+              <input id="phone" name="phone" type="tel" maxlength="32" autocomplete="tel">
+            </div>
+            <div class="field field-full">
+              <label for="message">How can we help? *</label>
+              <textarea id="message" name="message" maxlength="3000" required placeholder="Write your message here..."></textarea>
+            </div>
+          </div>
+          <div class="submit-row">
+            <button id="submit-button" type="submit">Send message</button>
+            <span class="privacy-note">Please don't include passwords, OTPs, or payment card details.</span>
+          </div>
+          <p id="form-status" class="status" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+    </section>
+  </main>
+
+  <footer>SmartShopOps Support</footer>
+
+  <script>
+    const form = document.getElementById("contact-form");
+    const submitButton = document.getElementById("submit-button");
+    const statusMessage = document.getElementById("form-status");
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      statusMessage.textContent = "";
+      statusMessage.classList.remove("error");
+      submitButton.disabled = true;
+      submitButton.textContent = "Sending...";
+
+      const formData = new FormData(form);
+      const payload = Object.fromEntries(formData.entries());
+
+      try {
+        const response = await fetch("/api/contact", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.message || "We couldn’t send your message. Please try again or email us directly.");
+        }
+        statusMessage.textContent = result.message;
+        form.reset();
+      } catch (error) {
+        statusMessage.textContent = error.message || "We couldn’t send your message. Please try again or email us directly.";
+        statusMessage.classList.add("error");
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = "Send message";
+      }
+    });
+  </script>
+</body>
+</html>

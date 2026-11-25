@@ -303,6 +303,8 @@ public class InvoiceController {
             summary.put("customerName", invoice.getCustomerName());
             summary.put("customerPhone", invoice.getCustomerPhone());
             summary.put("customerEmail", invoice.getCustomerEmail());
+            summary.put("customerAddress", invoice.getCustomerAddress());
+            summary.put("placeOfSupplyState", invoice.getPlaceOfSupplyState());
             summary.put("issuerType", invoice.getIssuerType());
             summary.put("issuerName", invoice.getIssuerName());
             summary.put("issuerGstin", invoice.getIssuerGstin());
@@ -504,12 +506,12 @@ public class InvoiceController {
                             org.springframework.http.HttpStatus.BAD_REQUEST,
                             itemLabel + " has no valid catalogue price");
                 }
-                BigDecimal roundedCatalogPrice = catalogPrice.setScale(2, RoundingMode.HALF_UP);
-                if (enteredPrice == null
-                        || enteredPrice.setScale(2, RoundingMode.HALF_UP).compareTo(roundedCatalogPrice) != 0) {
+                BigDecimal roundedCatalogPrice = (enteredPrice == null ? catalogPrice : enteredPrice)
+                        .setScale(2, RoundingMode.HALF_UP);
+                if (roundedCatalogPrice.compareTo(BigDecimal.ZERO) <= 0) {
                     throw new org.springframework.web.server.ResponseStatusException(
                             org.springframework.http.HttpStatus.BAD_REQUEST,
-                            itemLabel + " price does not match the current catalogue price");
+                            itemLabel + " price must be greater than zero");
                 }
 
                 String itemPricingMode = resolvePricingMode(submittedItem.getTaxPricingMode(), itemLabel);
@@ -613,6 +615,7 @@ public class InvoiceController {
             invoice.setPaidAmount(paidAmount);
             invoice.setTaxPricingMode(invoicePricingMode);
             invoice.setPlaceOfSupplyState(placeOfSupplyState);
+            invoice.setCustomerAddress(sanitizeCustomerAddress(invoiceRequest.getCustomerAddress()));
             invoice.setPaymentStatus(resolvePaymentStatus(paidAmount, grandTotal));
             invoice.setStatus(resolveInvoiceStatus(invoice.getPaymentStatus()));
             invoice.setIssuerType(issuer.type());
@@ -711,6 +714,18 @@ public class InvoiceController {
     private String resolveGstStateCode(String state) {
         return state == null ? null : GST_STATE_CODES.get(
                 state.trim().replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT));
+    }
+
+    private String sanitizeCustomerAddress(String address) {
+        if (address == null) return null;
+        String normalized = address.trim();
+        if (normalized.isEmpty()) return null;
+        if (normalized.length() > 500) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "Customer address must not exceed 500 characters");
+        }
+        return normalized;
     }
 
     private Invoice.PaymentStatus resolvePaymentStatus(BigDecimal paidAmount, BigDecimal grandTotal) {

@@ -31,6 +31,8 @@ public class Invoice {
 
     private String customerName;
     private String customerPhone;
+    @Column(name = "customer_address", length = 500)
+    private String customerAddress;
     private LocalDate date;
     private String paymentMethod;
 
@@ -130,6 +132,9 @@ public class Invoice {
 
     public String getCustomerPhone() { return customerPhone; }
     public void setCustomerPhone(String customerPhone) { this.customerPhone = customerPhone; }
+
+    public String getCustomerAddress() { return customerAddress; }
+    public void setCustomerAddress(String customerAddress) { this.customerAddress = customerAddress; }
 
     public LocalDate getDate() { return date; }
     public void setDate(LocalDate date) { this.date = date; }

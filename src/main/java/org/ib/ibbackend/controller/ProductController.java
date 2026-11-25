@@ -3,6 +3,7 @@ package org.ib.ibbackend.controller;
 
 import org.ib.ibbackend.dto.ProductUpsertRequest;
 import org.ib.ibbackend.dto.ProductResponse;
+import org.ib.ibbackend.dto.InventoryValueResponse;
 import org.ib.ibbackend.entity.InventoryMovement;
 import org.ib.ibbackend.entity.Product;
 import org.ib.ibbackend.entity.Tenant;
@@ -82,6 +83,16 @@ public class ProductController {
         Page<ProductResponse> response = products.map(product -> mapToResponse(product, rates));
 
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/inventory-value")
+    public ResponseEntity<InventoryValueResponse> getInventoryValue() {
+        Long tenantId = TenantContext.getCurrentTenant();
+        if (tenantId == null) {
+            throw new AccessDeniedException("Access denied");
+        }
+        return ResponseEntity.ok(new InventoryValueResponse(
+                productRepository.getInventoryValueByTenantId(tenantId)));
     }
 
     private ProductResponse mapToResponse(Product product, Map<String, java.math.BigDecimal> rates) {

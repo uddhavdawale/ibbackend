@@ -14,6 +14,9 @@ import org.ib.ibbackend.repository.UserRepository;
 import org.ib.ibbackend.service.InvoiceIdempotencyService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.server.ResponseStatusException;
@@ -231,6 +234,8 @@ class NonGstInvoiceServiceTest {
         invoice.setInvoiceNo("INV-104");
         invoice.setDate(LocalDate.of(2026, 11, 21));
         invoice.setCustomerName("Walk-in Customer");
+        invoice.setCustomerAddress("17 Market Road");
+        invoice.setPlaceOfSupplyState("MH");
         invoice.setTenant(tenant);
         invoice.setUser(user);
         invoice.setGrandTotal(new BigDecimal("115.50"));
@@ -240,6 +245,8 @@ class NonGstInvoiceServiceTest {
         invoice.setItems(List.of(item));
         TenantContext.setCurrentTenant(7L);
         when(invoiceRepository.findByIdAndTenantId(104L, 7L)).thenReturn(Optional.of(invoice));
+        when(invoiceRepository.findByTenantId(eq(7L), any(PageRequest.class)))
+                .thenReturn(new PageImpl<>(List.of(invoice), PageRequest.of(0, 10), 1));
 
         Map<String, Object> response = service.getNonGstInvoice(104L);
 
@@ -249,6 +256,11 @@ class NonGstInvoiceServiceTest {
         assertEquals(new BigDecimal("0.00"), response.get("dueCollection"));
         assertEquals("PAID", response.get("paymentStatus"));
         assertEquals("Walk-in Customer", response.get("customerName"));
+        assertEquals("17 Market Road", response.get("customerAddress"));
+        assertEquals("MH", response.get("placeOfSupplyState"));
+        Page<Map<String, Object>> invoicePage = service.listNonGstInvoices(0, 10, "", "all");
+        assertEquals("17 Market Road", invoicePage.getContent().get(0).get("customerAddress"));
+        assertEquals("MH", invoicePage.getContent().get(0).get("placeOfSupplyState"));
         List<?> items = (List<?>) response.get("items");
         assertEquals(1, items.size());
         assertEquals("Notebook", ((Map<?, ?>) items.get(0)).get("name"));

@@ -1,5 +1,6 @@
 package org.ib.ibbackend.security;
 
+import jakarta.servlet.DispatcherType;
 import org.ib.ibbackend.filter.JwtAuthFilter;
 import org.ib.ibbackend.filter.RequestContextFilter;
 import org.ib.ibbackend.filter.SimpleRateLimitFilter;
@@ -59,7 +60,10 @@ public class SecurityConfig {
             )
 
                 .authorizeHttpRequests(auth -> auth
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/contact-us", "/contact-us.html").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/contact").permitAll()
                         .requestMatchers(
                                 "/api/login",
                                 "/login",

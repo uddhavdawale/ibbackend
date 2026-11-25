@@ -97,6 +97,8 @@ class NonGstInvoiceControllerTest {
         invoice.setCustomerName("Rohan");
         invoice.setCustomerPhone("9876543210");
         invoice.setCustomerEmail("rohan@example.com");
+        invoice.setCustomerAddress("17 Market Road");
+        invoice.setPlaceOfSupplyState("MH");
         invoice.setDate(LocalDate.now());
         invoice.setSubtotal(new BigDecimal("1000.00"));
         invoice.setGstAmount(new BigDecimal("180.00"));
@@ -115,5 +117,7 @@ class NonGstInvoiceControllerTest {
         assertNotNull(response.getBody());
         assertEquals(1, response.getBody().getTotalElements());
         assertEquals("INV-11", response.getBody().getContent().get(0).get("invoiceNo"));
+        assertEquals("17 Market Road", response.getBody().getContent().get(0).get("customerAddress"));
+        assertEquals("MH", response.getBody().getContent().get(0).get("placeOfSupplyState"));
     }
 }

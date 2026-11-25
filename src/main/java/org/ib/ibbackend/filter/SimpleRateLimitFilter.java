@@ -30,7 +30,8 @@ public class SimpleRateLimitFilter extends OncePerRequestFilter {
             "/api/mfa/cancel",
             "/api/mfa/verify",
             "/api/auth/password/forgot",
-            "/api/auth/password/reset"
+            "/api/auth/password/reset",
+            "/api/contact"
     );
     private static final Set<String> EXPORT_PATH_PREFIXES = Set.of(
             "/api/dashboard",
@@ -71,7 +72,7 @@ public class SimpleRateLimitFilter extends OncePerRequestFilter {
 
     private int limitForPath(String path) {
         return switch (path) {
-            case "/api/auth/password/forgot" -> 5;
+            case "/api/auth/password/forgot", "/api/contact" -> 5;
             case "/api/auth/password/reset", "/api/mfa/send", "/api/mfa/cancel", "/api/mfa/verify" -> 10;
             case "/api/login", "/login", "/api/auth/login" -> 15;
             default -> MAX_REQUESTS_PER_WINDOW;
@@ -102,7 +103,7 @@ public class SimpleRateLimitFilter extends OncePerRequestFilter {
 
         int current = counter.count.incrementAndGet();
         if (current > maxRequests) {
-            auditLogService.denied("RATE_LIMIT_TRIGGER", path, "Rate limit exceeded for protected auth endpoint");
+            auditLogService.denied("RATE_LIMIT_TRIGGER", path, "Rate limit exceeded for protected endpoint");
             response.setStatus(429);
             response.setContentType("application/json");
             response.getWriter().write("{\"message\":\"Too many requests. Please retry shortly.\"}");

@@ -91,6 +91,12 @@ public class CustomerProfileService {
         request.setTenantId(tenantId);
         request.setCustomerName(name);
         request.setPhone(phone);
+        if (invoice.getCustomerAddress() != null) {
+            request.setAddress(invoice.getCustomerAddress());
+        }
+        if (invoice.getCustomerAddress() != null) {
+            request.setAddress(invoice.getCustomerAddress());
+        }
 
         CustomerProfile customer = createOrUpdateCustomer(request);
         customer.applyOutstandingAmount(calculateOutstanding(tenantId, phone, name));

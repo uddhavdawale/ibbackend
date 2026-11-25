@@ -45,4 +45,29 @@ class BrevoEmailServiceTest {
 
         assertThat(service.isConfigured()).isFalse();
     }
+
+    @Test
+    void includesReplyToWhenSendingContactMessage() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        BrevoEmailService service = new BrevoEmailService("test-api-key", builder);
+
+        server.expect(requestTo("https://api.brevo.com/v3/smtp/email"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("""
+                        {
+                          "sender": {"email": "sender@example.com"},
+                          "to": [{"email": "support@example.com"}],
+                          "subject": "Contact Us message",
+                          "textContent": "A message",
+                          "replyTo": {"email": "customer@example.com"}
+                        }
+                        """))
+                .andRespond(withSuccess());
+
+        service.send("sender@example.com", "support@example.com", "Contact Us message",
+                "A message", "customer@example.com");
+
+        server.verify();
+    }
 }

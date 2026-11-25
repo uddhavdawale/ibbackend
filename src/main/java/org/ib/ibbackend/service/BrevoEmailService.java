@@ -8,6 +8,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Service
@@ -30,16 +31,22 @@ public class BrevoEmailService {
     }
 
     public void send(String sender, String recipient, String subject, String textContent) {
+        send(sender, recipient, subject, textContent, null);
+    }
+
+    public void send(String sender, String recipient, String subject, String textContent, String replyTo) {
         if (!isConfigured()) {
             throw new IllegalStateException("Brevo API key is not configured");
         }
 
-        Map<String, Object> payload = Map.of(
-                "sender", Map.of("email", sender),
-                "to", List.of(Map.of("email", recipient)),
-                "subject", subject,
-                "textContent", textContent
-        );
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("sender", Map.of("email", sender));
+        payload.put("to", List.of(Map.of("email", recipient)));
+        payload.put("subject", subject);
+        payload.put("textContent", textContent);
+        if (replyTo != null && !replyTo.isBlank()) {
+            payload.put("replyTo", Map.of("email", replyTo.trim()));
+        }
         try {
             restClient.post()
                     .uri(SEND_EMAIL_PATH)

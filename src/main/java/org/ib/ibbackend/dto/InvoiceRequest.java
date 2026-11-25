@@ -8,6 +8,9 @@ import java.util.List;
 public class InvoiceRequest {
     private String customerName;
     private String customerPhone;
+    private String customerAddress;
+    private String receiptAddress;
+    private String customerState;
     private String paymentMethod;
     private String status;
     private String paymentStatus;
@@ -50,6 +53,17 @@ public class InvoiceRequest {
 
     public String getCustomerPhone() { return customerPhone; }
     public void setCustomerPhone(String customerPhone) { this.customerPhone = customerPhone; }
+
+    public String getCustomerAddress() {
+        return customerAddress != null ? customerAddress : receiptAddress;
+    }
+    public void setCustomerAddress(String customerAddress) { this.customerAddress = customerAddress; }
+
+    public String getReceiptAddress() { return receiptAddress != null ? receiptAddress : customerAddress; }
+    public void setReceiptAddress(String receiptAddress) { this.receiptAddress = receiptAddress; }
+
+    public String getCustomerState() { return customerState; }
+    public void setCustomerState(String customerState) { this.customerState = customerState; }
 
     public String getPaymentMethod() { return paymentMethod; }
     public void setPaymentMethod(String paymentMethod) { this.paymentMethod = paymentMethod; }

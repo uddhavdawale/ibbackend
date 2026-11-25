@@ -195,7 +195,9 @@ public class CashBalanceService {
                     .findFirst()
                     .orElseThrow(() -> new ResponseStatusException(
                             HttpStatus.NOT_FOUND, "Cashier balance is unavailable"));
-            return Map.of("balance", ownBalance);
+            Map<String, Object> response = new LinkedHashMap<>(ownBalance);
+            response.put("balance", ownBalance);
+            return response;
         }
         requireAdmin(actor);
 

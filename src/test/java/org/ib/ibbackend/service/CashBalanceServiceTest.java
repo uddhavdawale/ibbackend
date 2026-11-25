@@ -51,7 +51,10 @@ class CashBalanceServiceTest {
                 org.mockito.ArgumentMatchers.eq(trackingStart),
                 org.mockito.ArgumentMatchers.any(Instant.class))).thenReturn(List.of(balance));
 
-        assertEquals(balance, service.getBalances(3, 10).get("balance"));
+        Map<String, Object> response = service.getBalances(3, 10);
+        assertEquals(balance, response.get("balance"));
+        assertEquals(balance.get("dueToSubmit"), response.get("dueToSubmit"));
+        assertEquals(balance.get("availableToSubmit"), response.get("availableToSubmit"));
     }
 
     @Test

@@ -84,6 +84,18 @@ Non-GST creation currently permits an omitted status and then derives state from
 - Customer profile synchronization persists the calculated ledger value when invoices are created or payments are processed. Read endpoints recalculate the response but do not write to the database.
 - The invoice request fields named `previousBalance` and `balanceAmount` are not an invoice balance snapshot contract. If a future UI needs a server-calculated previous-balance snapshot on the invoice itself, add an explicit response field/DTO and define its transaction-time semantics; do not trust a client-provided value.
 
+## Unified customer ledger API
+
+`GET /api/customer-ledger?page=0&size=25&search=&customerKey=&from=&to=` returns a single tenant-scoped page across GST and non-GST invoices. Page numbering starts at zero; the server always returns at most 25 rows and reports `page.size` as `25`. `search` matches customer name, phone, or invoice number. `from` and `to` are inclusive invoice dates (`YYYY-MM-DD`) in the current retailer reporting timezone (`Asia/Kolkata`). A reversed date range is rejected.
+
+The tenant is taken only from the authenticated `TenantContext`. `customerOptions` is populated on page zero from tenant customer profiles and invoice-only customer identities, so it does not depend on the current invoice page. Profile-backed keys use `id:<customer-profile-id>`; invoice-only keys use a tenant-scoped phone or name identity. The same account key is applied to both invoice types.
+
+Rows are ordered by invoice timestamp descending, then bill type and invoice ID as a deterministic unique tie-breaker. Row amounts and report totals are calculated from the persisted invoice balances; collection/refund transactions update `paidAmount` in the same transaction, avoiding payment-join multiplication. Opening and closing balances are computed over the tenant's complete invoice history for that customer, while the page and matching report totals use the requested filters. With no filters, `received` retains the payment report's all-time net-of-refunds semantics, and `customerDue` is the current tenant-wide invoice due. With filters, billed/received use matching invoice rows and customer due sums each matching account's current balance.
+
+`GET /api/customer-ledger/export?search=&customerKey=&from=&to=` applies the same filters and ordering and streams all matching rows as UTF-8 CSV. The fixed attachment filename is `customer-ledger.csv`; text cells are CSV-escaped and prefixed when they could be spreadsheet formulas. The export executes as a read-only database cursor with bounded fetch size rather than loading the full report into application memory.
+
+Flyway migration `V35` adds tenant/date/identifier indexes for the combined invoice scan and tenant/invoice indexes for payment reconciliation. The existing schema has no customer foreign key on invoices, so customer identity follows the current tenant-scoped phone/name matching rules rather than introducing a costly data backfill or changing invoice creation.
+
 ## Tenant, security, and production constraints
 
 - Every customer and invoice lookup/aggregate must remain scoped to the current tenant. Never aggregate balances across tenants.

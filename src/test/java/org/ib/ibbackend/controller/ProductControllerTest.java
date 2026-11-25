@@ -1,6 +1,7 @@
 package org.ib.ibbackend.controller;
 
 import org.ib.ibbackend.dto.ProductUpsertRequest;
+import org.ib.ibbackend.dto.InventoryValueResponse;
 import org.ib.ibbackend.entity.InventoryMovement;
 import org.ib.ibbackend.entity.Product;
 import org.ib.ibbackend.filter.TenantContext;
@@ -16,10 +17,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
+
+import java.math.BigDecimal;
+import org.springframework.security.access.AccessDeniedException;
 
 @ExtendWith(MockitoExtension.class)
 class ProductControllerTest {
@@ -81,5 +87,26 @@ class ProductControllerTest {
                 "Initial stock set during product creation",
                 false
         );
+    }
+
+    @Test
+    void inventoryValueUsesTheAuthenticatedTenant() {
+        TenantContext.setCurrentTenant(9L);
+        when(productRepository.getInventoryValueByTenantId(9L))
+                .thenReturn(new BigDecimal("1250.75"));
+
+        ResponseEntity<InventoryValueResponse> response = productController.getInventoryValue();
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(new BigDecimal("1250.75"), response.getBody().inventoryValue());
+        verify(productRepository).getInventoryValueByTenantId(9L);
+    }
+
+    @Test
+    void inventoryValueRequiresTenantContext() {
+        TenantContext.clear();
+
+        assertThrows(AccessDeniedException.class, () -> productController.getInventoryValue());
+        verifyNoInteractions(productRepository);
     }
 }

@@ -30,6 +30,12 @@ public class NonGstInvoice {
     @Column(name = "customer_phone")
     private String customerPhone;
 
+    @Column(name = "customer_address", length = 500)
+    private String customerAddress;
+
+    @Column(name = "place_of_supply_state", length = 100)
+    private String placeOfSupplyState;
+
     @Column(name = "invoice_date", nullable = false)
     private LocalDate date;
 
@@ -124,6 +130,12 @@ public class NonGstInvoice {
     public void setCustomerPhone(String customerPhone) {
         this.customerPhone = customerPhone;
     }
+
+    public String getCustomerAddress() { return customerAddress; }
+    public void setCustomerAddress(String customerAddress) { this.customerAddress = customerAddress; }
+
+    public String getPlaceOfSupplyState() { return placeOfSupplyState; }
+    public void setPlaceOfSupplyState(String placeOfSupplyState) { this.placeOfSupplyState = placeOfSupplyState; }
 
     public LocalDate getDate() {
         return date;

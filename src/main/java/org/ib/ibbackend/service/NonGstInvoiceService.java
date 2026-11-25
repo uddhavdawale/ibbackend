@@ -111,6 +111,10 @@ public class NonGstInvoiceService {
         invoice.setInvoiceNo(invoiceNo);
         invoice.setCustomerName(sanitizeText(request.getCustomerName(), 255));
         invoice.setCustomerPhone(sanitizeText(request.getCustomerPhone(), 50));
+        invoice.setCustomerAddress(sanitizeText(request.getCustomerAddress(), 500));
+        if (request.getCustomerState() != null) {
+            invoice.setPlaceOfSupplyState(sanitizeText(request.getCustomerState(), 100));
+        }
         invoice.setDate(LocalDate.now());
         invoice.setPaymentMethod(sanitizeText(request.getPaymentMethod(), 100));
         invoice.setBillType("non-gst");
@@ -277,6 +281,8 @@ public class NonGstInvoiceService {
             data.put("date", invoice.getDate());
             data.put("customerName", invoice.getCustomerName());
             data.put("customerPhone", invoice.getCustomerPhone());
+            data.put("customerAddress", invoice.getCustomerAddress());
+            data.put("placeOfSupplyState", invoice.getPlaceOfSupplyState());
             data.put("issuerType", invoice.getIssuerType());
             data.put("issuerName", invoice.getIssuerName());
             data.put("issuerGstin", invoice.getIssuerGstin());
@@ -337,6 +343,8 @@ public class NonGstInvoiceService {
         data.put("date", invoice.getDate());
         data.put("customerName", invoice.getCustomerName());
         data.put("customerPhone", invoice.getCustomerPhone());
+        data.put("customerAddress", invoice.getCustomerAddress());
+        data.put("placeOfSupplyState", invoice.getPlaceOfSupplyState());
         data.put("issuerType", invoice.getIssuerType());
         data.put("issuerName", invoice.getIssuerName());
         data.put("issuerGstin", invoice.getIssuerGstin());

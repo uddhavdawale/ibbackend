@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -75,6 +76,13 @@ public interface ProductRepository extends JpaRepository<Product,Long> {
 
     @Query("SELECT COUNT(p) FROM Product p WHERE p.tenant.id = :tenantId")
     long countByTenantId(@Param("tenantId") Long tenantId);
+
+    @Query(value = """
+            SELECT COALESCE(SUM(COALESCE(quantity, 0) * COALESCE(price, 0)), 0)
+            FROM products
+            WHERE tenant_id = :tenantId
+            """, nativeQuery = true)
+    BigDecimal getInventoryValueByTenantId(@Param("tenantId") Long tenantId);
 
     @Query("SELECT p FROM Product p WHERE p.tenant.id = :tenantId")
     Page<Product> findByTenant(@Param("tenantId") Long tenantId, Pageable pageable);

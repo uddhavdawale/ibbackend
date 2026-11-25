@@ -3,6 +3,7 @@ package org.ib.ibbackend.controller;
 import org.ib.ibbackend.dto.CustomerProfileRequest;
 import org.ib.ibbackend.entity.CustomerProfile;
 import org.ib.ibbackend.filter.TenantContext;
+import org.ib.ibbackend.service.CustomerDirectoryService;
 import org.ib.ibbackend.service.CustomerProfileService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -16,9 +17,13 @@ import java.util.List;
 public class CustomerProfileController {
 
     private final CustomerProfileService customerProfileService;
+    private final CustomerDirectoryService customerDirectoryService;
 
-    public CustomerProfileController(CustomerProfileService customerProfileService) {
+    public CustomerProfileController(
+            CustomerProfileService customerProfileService,
+            CustomerDirectoryService customerDirectoryService) {
         this.customerProfileService = customerProfileService;
+        this.customerDirectoryService = customerDirectoryService;
     }
 
     @PostMapping
@@ -40,6 +45,14 @@ public class CustomerProfileController {
             throw new AccessDeniedException("Access denied");
         }
         return ResponseEntity.ok(customerProfileService.listByTenant(tenantId));
+    }
+
+    @GetMapping("/page")
+    public ResponseEntity<org.ib.ibbackend.dto.CustomerDirectoryPageResponse> pageCustomers(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "25") int size,
+            @RequestParam(required = false) String search) {
+        return ResponseEntity.ok(customerDirectoryService.getPage(page, size, search));
     }
 
     @GetMapping("/search")
