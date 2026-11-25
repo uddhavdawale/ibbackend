@@ -306,6 +306,10 @@ class PaymentCollectionServiceTest {
                 eq("CASH"), eq(99L)))
                 .thenReturn(new Object[]{BigDecimal.ZERO, 0L, BigDecimal.ZERO,
                         BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO});
+        when(invoiceRepository.getNetSalesByTenantIdAndDateRange(7L, reportDate, reportDate))
+                .thenReturn(BigDecimal.ZERO);
+        when(nonGstInvoiceRepository.getNetSalesByTenantIdAndDateRange(7L, reportDate, reportDate))
+                .thenReturn(BigDecimal.ZERO);
         when(invoiceRepository.getPendingAmountByTenantId(7L)).thenReturn(BigDecimal.ZERO);
         when(nonGstInvoiceRepository.getPendingAmountByTenantId(7L)).thenReturn(BigDecimal.ZERO);
 
@@ -339,6 +343,10 @@ class PaymentCollectionServiceTest {
                 eq(null), eq("CASH"), eq(null)))
                 .thenReturn(new Object[]{new BigDecimal("2.75"), 1L, new BigDecimal("2.75"),
                         BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO});
+        when(invoiceRepository.getNetSalesByTenantIdAndDateRange(7L, reportDate, reportDate))
+                .thenReturn(new BigDecimal("120.00"));
+        when(nonGstInvoiceRepository.getNetSalesByTenantIdAndDateRange(7L, reportDate, reportDate))
+                .thenReturn(new BigDecimal("30.00"));
         when(invoiceRepository.getPendingAmountByTenantId(7L)).thenReturn(BigDecimal.ZERO);
         when(nonGstInvoiceRepository.getPendingAmountByTenantId(7L)).thenReturn(BigDecimal.ZERO);
 
@@ -346,9 +354,12 @@ class PaymentCollectionServiceTest {
         Map<?, ?> summary = (Map<?, ?>) result.get("summary");
         List<?> payments = (List<?>) result.get("payments");
 
+        assertEquals(new BigDecimal("150.00"), summary.get("netSales"));
         assertEquals(new BigDecimal("2.75"), summary.get("totalCollected"));
         assertEquals(new BigDecimal("2.75"), summary.get("cashCollected"));
         assertEquals(new BigDecimal("2.75"), ((Map<?, ?>) payments.get(0)).get("amount"));
+        verify(invoiceRepository).getNetSalesByTenantIdAndDateRange(7L, reportDate, reportDate);
+        verify(nonGstInvoiceRepository).getNetSalesByTenantIdAndDateRange(7L, reportDate, reportDate);
     }
 
     private User collector(int tenantId, String role) {

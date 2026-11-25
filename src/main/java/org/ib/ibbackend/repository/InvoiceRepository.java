@@ -12,6 +12,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 @Repository
@@ -36,6 +37,13 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
 
     @Query("SELECT COALESCE(SUM(i.grandTotal), 0) FROM Invoice i WHERE i.tenant.id = :tenantId")
     BigDecimal getTotalRevenueByTenantId(@Param("tenantId") Long tenantId);
+
+    @Query("SELECT COALESCE(SUM(i.grandTotal), 0) FROM Invoice i " +
+            "WHERE i.tenant.id = :tenantId AND i.status <> 'CANCELLED' " +
+            "AND i.date BETWEEN :fromDate AND :toDate")
+    BigDecimal getNetSalesByTenantIdAndDateRange(@Param("tenantId") Long tenantId,
+                                                  @Param("fromDate") LocalDate fromDate,
+                                                  @Param("toDate") LocalDate toDate);
 
     // Today's sales - Use FUNCTION for DATE compatibility
     @Query("SELECT COALESCE(SUM(i.grandTotal), 0) FROM Invoice i " +

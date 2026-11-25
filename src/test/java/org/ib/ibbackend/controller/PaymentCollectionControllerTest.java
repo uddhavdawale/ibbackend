@@ -38,6 +38,7 @@ class PaymentCollectionControllerTest {
                 "from", today.toString(),
                 "to", today.toString(),
                 "summary", Map.of(
+                        "netSales", 0.00,
                         "totalCollected", 1250.00,
                         "totalTransactions", 3,
                         "cashCollected", 500.00,

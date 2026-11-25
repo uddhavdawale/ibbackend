@@ -238,6 +238,11 @@ public class PaymentCollectionService {
         summary.put("upiCollected", decimalAt(totals, 3));
         summary.put("cardCollected", decimalAt(totals, 4));
         summary.put("totalRefunds", decimalAt(totals, 5));
+        summary.put("netSales",
+                invoiceRepository.getNetSalesByTenantIdAndDateRange(tenantId.longValue(), from, to)
+                        .add(nonGstInvoiceRepository.getNetSalesByTenantIdAndDateRange(
+                                tenantId.longValue(), from, to))
+                        .setScale(2, RoundingMode.HALF_UP));
         summary.put("outstandingAmount",
                 invoiceRepository.getPendingAmountByTenantId(tenantId.longValue())
                         .add(nonGstInvoiceRepository.getPendingAmountByTenantId(tenantId.longValue())));

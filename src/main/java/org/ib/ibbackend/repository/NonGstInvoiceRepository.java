@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -18,6 +19,13 @@ public interface NonGstInvoiceRepository extends JpaRepository<NonGstInvoice, Lo
 
     @Query("SELECT COALESCE(SUM(i.grandTotal), 0) FROM NonGstInvoice i WHERE i.tenant.id = :tenantId")
     BigDecimal getTotalRevenueByTenantId(@Param("tenantId") Long tenantId);
+
+    @Query("SELECT COALESCE(SUM(i.grandTotal), 0) FROM NonGstInvoice i " +
+            "WHERE i.tenant.id = :tenantId AND UPPER(i.status) <> 'CANCELLED' " +
+            "AND i.date BETWEEN :fromDate AND :toDate")
+    BigDecimal getNetSalesByTenantIdAndDateRange(@Param("tenantId") Long tenantId,
+                                                  @Param("fromDate") LocalDate fromDate,
+                                                  @Param("toDate") LocalDate toDate);
 
     @Query("SELECT COUNT(i) FROM NonGstInvoice i WHERE i.tenant.id = :tenantId")
     long countByTenantId(@Param("tenantId") Long tenantId);
