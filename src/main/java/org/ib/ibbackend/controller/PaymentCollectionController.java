@@ -15,6 +15,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -53,6 +54,15 @@ public class PaymentCollectionController {
         requireTenantContext();
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(paymentCollectionService.refundPayment(paymentId, request));
+    }
+
+    @GetMapping("/payments/refundable")
+    public ResponseEntity<List<Map<String, Object>>> getRefundablePaymentsForCancelledInvoice(
+            @RequestParam Long invoiceId,
+            @RequestParam String billType) {
+        requireTenantContext();
+        return ResponseEntity.ok(
+                paymentCollectionService.getRefundablePaymentsForCancelledInvoice(invoiceId, billType));
     }
 
     @GetMapping("/payments")

@@ -9,6 +9,7 @@ import java.util.List;
 public class ReturnOrderRequest {
 
     private Long invoiceId;
+    private String billType = "gst";
     private String reason;
     @JsonAlias({"returnItems", "return_items", "returnItem"})
     private List<Item> items = new ArrayList<>();
@@ -19,6 +20,14 @@ public class ReturnOrderRequest {
 
     public void setInvoiceId(Long invoiceId) {
         this.invoiceId = invoiceId;
+    }
+
+    public String getBillType() {
+        return billType;
+    }
+
+    public void setBillType(String billType) {
+        this.billType = billType;
     }
 
     public String getReason() {

@@ -117,6 +117,9 @@ public class InvoiceController {
     @Autowired
     private org.ib.ibbackend.service.InvoiceIdempotencyService invoiceIdempotencyService;
 
+    @Autowired
+    private org.ib.ibbackend.service.SellOrderAdjustmentSupport sellOrderAdjustmentSupport;
+
     private void auditSuccess(String action, String resourceId, String detail) {
         if (auditLogService != null) {
             auditLogService.success(action, resourceId, detail);
@@ -196,7 +199,7 @@ public class InvoiceController {
             throw new org.springframework.security.access.AccessDeniedException("Access denied");
         }
 
-        return invoiceRepository.findByIdAndTenantId(id, tenantId)
+        return invoiceRepository.findByIdAndTenantIdForUpdate(id, tenantId)
                 .map(invoice -> {
                     if (invoice.getStatus() == Invoice.InvoiceStatus.CANCELLED) {
                         Map<String, Object> payload = new HashMap<>();
@@ -208,6 +211,7 @@ public class InvoiceController {
                         return ResponseEntity.ok(payload);
                     }
 
+                    sellOrderAdjustmentSupport.assertCanCancel(id, tenantId, "gst");
                     List<InvoiceItem> items = invoice.getItems() == null ? List.of() : invoice.getItems();
                     for (InvoiceItem item : items) {
                         restoreStockOnCancel(item, invoice.getInvoiceNo(), tenantId);

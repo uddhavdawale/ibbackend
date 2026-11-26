@@ -48,6 +48,9 @@ public class NonGstInvoiceService {
     private final InvoiceIdempotencyService invoiceIdempotencyService;
 
     @Autowired
+    private SellOrderAdjustmentSupport sellOrderAdjustmentSupport;
+
+    @Autowired
     public NonGstInvoiceService(
             NonGstInvoiceRepository nonGstInvoiceRepository,
             ProductRepository productRepository,
@@ -396,7 +399,7 @@ public class NonGstInvoiceService {
             throw new AccessDeniedException("Access denied");
         }
 
-        NonGstInvoice invoice = nonGstInvoiceRepository.findByIdAndTenantId(id, tenantId)
+        NonGstInvoice invoice = nonGstInvoiceRepository.findByIdAndTenantIdForUpdate(id, tenantId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Sell order not found"));
 
         if ("CANCELLED".equalsIgnoreCase(invoice.getStatus())) {
@@ -409,6 +412,7 @@ public class NonGstInvoiceService {
             return payload;
         }
 
+        sellOrderAdjustmentSupport.assertCanCancel(id, tenantId, "non-gst");
         List<NonGstInvoiceItem> items = invoice.getItems() == null ? List.of() : invoice.getItems();
         for (NonGstInvoiceItem item : items) {
             Long productId = item.getProduct() != null ? item.getProduct().getId() : null;

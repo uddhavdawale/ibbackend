@@ -9,6 +9,7 @@ import java.util.List;
 public class ExchangeOrderRequest {
 
     private Long invoiceId;
+    private String billType = "gst";
     private String reason;
     private BigDecimal newInvoiceAmount = BigDecimal.ZERO;
     @JsonAlias({"exchangeItems", "exchange_items", "items"})
@@ -20,6 +21,14 @@ public class ExchangeOrderRequest {
 
     public void setInvoiceId(Long invoiceId) {
         this.invoiceId = invoiceId;
+    }
+
+    public String getBillType() {
+        return billType;
+    }
+
+    public void setBillType(String billType) {
+        this.billType = billType;
     }
 
     public String getReason() {

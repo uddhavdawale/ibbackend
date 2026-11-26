@@ -17,4 +17,14 @@ public interface ExchangeOrderRepository extends JpaRepository<ExchangeOrder, Lo
 
     @Query("SELECT e FROM ExchangeOrder e WHERE e.id = :id AND e.tenant.id = :tenantId")
     Optional<ExchangeOrder> findByIdAndTenantId(@Param("id") Long id, @Param("tenantId") Long tenantId);
+
+    boolean existsByTenant_IdAndBillTypeAndInvoiceId(Long tenantId, String billType, Long invoiceId);
+
+    @Query("SELECT item.productId, SUM(item.quantity) FROM ExchangeOrderItem item " +
+            "WHERE item.exchangeOrder.invoiceId = :invoiceId " +
+            "AND item.exchangeOrder.tenant.id = :tenantId " +
+            "AND item.exchangeOrder.billType = :billType GROUP BY item.productId")
+    List<Object[]> findExchangedQuantityTotals(@Param("invoiceId") Long invoiceId,
+                                               @Param("tenantId") Long tenantId,
+                                               @Param("billType") String billType);
 }

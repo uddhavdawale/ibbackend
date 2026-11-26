@@ -25,6 +25,9 @@ public class ExchangeOrder {
     @Column(name = "invoice_id", nullable = false)
     private Long invoiceId;
 
+    @Column(name = "bill_type", nullable = false, length = 16)
+    private String billType = "gst";
+
     @Column(name = "invoice_no", nullable = false)
     private String invoiceNo;
 
@@ -75,6 +78,14 @@ public class ExchangeOrder {
 
     public void setInvoiceId(Long invoiceId) {
         this.invoiceId = invoiceId;
+    }
+
+    public String getBillType() {
+        return billType;
+    }
+
+    public void setBillType(String billType) {
+        this.billType = billType;
     }
 
     public String getInvoiceNo() {

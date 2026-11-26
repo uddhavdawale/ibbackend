@@ -4,122 +4,102 @@ import org.ib.ibbackend.dto.ExchangeOrderRequest;
 import org.ib.ibbackend.entity.ExchangeOrder;
 import org.ib.ibbackend.entity.ExchangeOrderItem;
 import org.ib.ibbackend.entity.InventoryMovement;
-import org.ib.ibbackend.entity.Invoice;
-import org.ib.ibbackend.entity.InvoiceItem;
-import org.ib.ibbackend.entity.Product;
-import org.ib.ibbackend.filter.TenantContext;
 import org.ib.ibbackend.repository.ExchangeOrderRepository;
-import org.ib.ibbackend.repository.InvoiceRepository;
-import org.ib.ibbackend.repository.ProductRepository;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 public class ExchangeOrderService {
 
-    private final InvoiceRepository invoiceRepository;
-    private final ProductRepository productRepository;
+    private final SellOrderAdjustmentSupport adjustmentSupport;
     private final ExchangeOrderRepository exchangeOrderRepository;
-    private final InventorySecurityService inventorySecurityService;
 
-    public ExchangeOrderService(InvoiceRepository invoiceRepository,
-                               ProductRepository productRepository,
-                               ExchangeOrderRepository exchangeOrderRepository,
-                               InventorySecurityService inventorySecurityService) {
-        this.invoiceRepository = invoiceRepository;
-        this.productRepository = productRepository;
+    public ExchangeOrderService(SellOrderAdjustmentSupport adjustmentSupport,
+                                ExchangeOrderRepository exchangeOrderRepository) {
+        this.adjustmentSupport = adjustmentSupport;
         this.exchangeOrderRepository = exchangeOrderRepository;
-        this.inventorySecurityService = inventorySecurityService;
     }
 
     @Transactional
     public ExchangeOrder createExchangeOrder(ExchangeOrderRequest request) {
-        if (request == null) {
-            throw new IllegalArgumentException("Exchange order request is required");
-        }
-        if (request.getInvoiceId() == null) {
+        if (request == null || request.getInvoiceId() == null) {
             throw new IllegalArgumentException("Invoice ID is required");
         }
-        if (request.getItems() == null || request.getItems().isEmpty()) {
-            throw new IllegalArgumentException("At least one exchange item is required");
+        String reason = normalizeReason(request.getReason());
+        BigDecimal newInvoiceAmount = request.getNewInvoiceAmount();
+        if (newInvoiceAmount.signum() < 0 || newInvoiceAmount.stripTrailingZeros().scale() > 2
+                || newInvoiceAmount.precision() > 12) {
+            throw new IllegalArgumentException("New invoice amount must be non-negative with up to two decimal places");
         }
 
-        Invoice invoice = invoiceRepository.findById(request.getInvoiceId())
-                .orElseThrow(() -> new IllegalArgumentException("Invoice not found: " + request.getInvoiceId()));
-
-        Long tenantId = TenantContext.getCurrentTenant();
-        if (tenantId == null && invoice.getTenant() != null) {
-            tenantId = (long) invoice.getTenant().getId();
-        }
-        if (tenantId == null) {
-            throw new AccessDeniedException("Access denied");
-        }
-
-        ExchangeOrder exchangeOrder = new ExchangeOrder();
-        exchangeOrder.setInvoiceId(invoice.getId());
-        exchangeOrder.setInvoiceNo(invoice.getInvoiceNo());
-        exchangeOrder.setCustomerName(invoice.getCustomerName());
-        exchangeOrder.setCustomerPhone(invoice.getCustomerPhone());
-        exchangeOrder.setReason(request.getReason());
-        exchangeOrder.setTenant(invoice.getTenant());
-        exchangeOrder.setNewInvoiceAmount(request.getNewInvoiceAmount());
-
-        List<ExchangeOrderItem> exchangeItems = new ArrayList<>();
+        SellOrderAdjustmentSupport.InvoiceSnapshot invoice =
+                adjustmentSupport.lockInvoice(request.getInvoiceId(), request.getBillType());
+        Map<Long, Integer> adjustedQuantities = adjustmentSupport.getAdjustedQuantities(invoice);
+        Set<Long> seenProducts = new HashSet<>();
+        List<ValidatedExchangeItem> validatedItems = new ArrayList<>();
         BigDecimal creditTotal = BigDecimal.ZERO;
 
         for (ExchangeOrderRequest.Item itemRequest : request.getItems()) {
             if (itemRequest == null || itemRequest.getProductId() == null) {
                 throw new IllegalArgumentException("Each exchange item must include a product ID");
             }
+            Long productId = itemRequest.getProductId();
+            if (!seenProducts.add(productId)) {
+                throw new IllegalArgumentException("A product can only be listed once per exchange");
+            }
             if (itemRequest.getQuantity() == null || itemRequest.getQuantity() <= 0) {
-                throw new IllegalArgumentException("Quantity must be greater than zero for product " + itemRequest.getProductId());
+                throw new IllegalArgumentException("Exchange quantity must be greater than zero for product " + productId);
             }
 
-            InvoiceItem invoiceItem = invoice.getItems() == null ? null : invoice.getItems().stream()
-                    .filter(item -> item.getProductId() != null && item.getProductId().equals(itemRequest.getProductId()))
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalArgumentException("Product " + itemRequest.getProductId() + " is not present in invoice " + invoice.getInvoiceNo()));
-
-            int soldQty = invoiceItem.getQty() == null ? 0 : invoiceItem.getQty();
-            int requestedQty = itemRequest.getQuantity();
-            if (requestedQty > soldQty) {
-                throw new IllegalArgumentException("Cannot exchange more than sold quantity for product " + itemRequest.getProductId());
+            SellOrderAdjustmentSupport.SoldItem soldItem = invoice.items().get(productId);
+            if (soldItem == null) {
+                throw new IllegalArgumentException("Product " + productId + " is not present in the sell order");
+            }
+            int remainingQuantity = soldItem.quantity() - adjustedQuantities.getOrDefault(productId, 0);
+            if (itemRequest.getQuantity() > remainingQuantity) {
+                throw new IllegalArgumentException("Only " + Math.max(remainingQuantity, 0)
+                        + " unit(s) remain available to exchange for product " + productId);
             }
 
-            BigDecimal unitPrice = itemRequest.getUnitPrice() != null ? itemRequest.getUnitPrice() : (invoiceItem.getPrice() == null ? BigDecimal.ZERO : invoiceItem.getPrice());
-            BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(requestedQty));
+            BigDecimal unitPrice = soldItem.unitPrice();
+            BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(itemRequest.getQuantity()));
             creditTotal = creditTotal.add(lineTotal);
+            validatedItems.add(new ValidatedExchangeItem(productId, soldItem.productName(),
+                    itemRequest.getQuantity(), unitPrice, lineTotal));
+        }
+        if (validatedItems.isEmpty()) {
+            throw new IllegalArgumentException("At least one exchange item is required");
+        }
 
-            Product product = productRepository.findById(itemRequest.getProductId())
-                    .orElseThrow(() -> new IllegalArgumentException("Product not found: " + itemRequest.getProductId()));
+        ExchangeOrder exchangeOrder = new ExchangeOrder();
+        exchangeOrder.setInvoiceId(invoice.invoiceId());
+        exchangeOrder.setBillType(invoice.billType());
+        exchangeOrder.setInvoiceNo(invoice.invoiceNo());
+        exchangeOrder.setCustomerName(invoice.customerName());
+        exchangeOrder.setCustomerPhone(invoice.customerPhone());
+        exchangeOrder.setReason(reason);
+        exchangeOrder.setTenant(invoice.tenant());
+        exchangeOrder.setNewInvoiceAmount(newInvoiceAmount);
 
-            if (inventorySecurityService != null) {
-                inventorySecurityService.applyMovement(
-                        itemRequest.getProductId(),
-                        requestedQty,
-                        InventoryMovement.MovementType.EXCHANGE,
-                        "EXCHANGE_ORDER",
-                        invoice.getInvoiceNo(),
-                        "Stock returned for exchange order",
-                        false
-                );
-            } else {
-                int stock = product.getQuantity() == null ? 0 : product.getQuantity();
-                product.setQuantity(stock + requestedQty);
-                productRepository.save(product);
-            }
+        List<ExchangeOrderItem> exchangeItems = new ArrayList<>();
+        for (ValidatedExchangeItem validatedItem : validatedItems) {
+            adjustmentSupport.restoreStock(validatedItem.productId(), validatedItem.quantity(),
+                    InventoryMovement.MovementType.EXCHANGE, "EXCHANGE_ORDER", invoice.invoiceNo(),
+                    "Stock returned for exchange order");
 
             ExchangeOrderItem exchangeItem = new ExchangeOrderItem();
-            exchangeItem.setProductId(itemRequest.getProductId());
-            exchangeItem.setProductName(itemRequest.getProductName() != null ? itemRequest.getProductName() : invoiceItem.getName());
-            exchangeItem.setQuantity(requestedQty);
-            exchangeItem.setUnitPrice(unitPrice);
-            exchangeItem.setLineTotal(lineTotal);
+            exchangeItem.setProductId(validatedItem.productId());
+            exchangeItem.setProductName(validatedItem.productName());
+            exchangeItem.setQuantity(validatedItem.quantity());
+            exchangeItem.setUnitPrice(validatedItem.unitPrice());
+            exchangeItem.setLineTotal(validatedItem.lineTotal());
             exchangeItem.setExchangeOrder(exchangeOrder);
             exchangeItems.add(exchangeItem);
         }
@@ -127,5 +107,17 @@ public class ExchangeOrderService {
         exchangeOrder.setItems(exchangeItems);
         exchangeOrder.setCreditAmount(creditTotal);
         return exchangeOrderRepository.save(exchangeOrder);
+    }
+
+    private String normalizeReason(String reason) {
+        String normalized = reason == null ? "" : reason.trim();
+        if (normalized.isEmpty() || normalized.length() > 500) {
+            throw new IllegalArgumentException("Exchange reason is required and must be 500 characters or fewer");
+        }
+        return normalized;
+    }
+
+    private record ValidatedExchangeItem(Long productId, String productName, int quantity,
+                                         BigDecimal unitPrice, BigDecimal lineTotal) {
     }
 }

@@ -33,6 +33,13 @@ public class ReturnOrderController {
         return ResponseEntity.ok(returnOrderService.createReturnOrder(request));
     }
 
+    @GetMapping("/available")
+    public ResponseEntity<List<ReturnOrderService.AvailableItem>> getAvailableReturnItems(
+            @RequestParam Long invoiceId,
+            @RequestParam(defaultValue = "gst") String billType) {
+        return ResponseEntity.ok(returnOrderService.getAvailableItems(invoiceId, billType));
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> handleBadRequest(IllegalArgumentException ex) {
         return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));

@@ -283,6 +283,37 @@ class PaymentCollectionServiceTest {
     }
 
     @Test
+    void refundAfterCancellationReducesPaidAmountWithoutReopeningInvoice() {
+        User owner = collector(7, "store_admin");
+        Invoice invoice = invoice(100, 50);
+        invoice.setStatus(Invoice.InvoiceStatus.CANCELLED);
+        invoice.setPaymentStatus(Invoice.PaymentStatus.CANCELLED);
+        PaymentRecord original = new PaymentRecord();
+        original.setInvoice(invoice);
+        original.setAmount(new BigDecimal("50.00"));
+        original.setMethod("UPI");
+        original.setStatus("RECEIVED");
+        original.setSource("COLLECTION");
+        original.setReceiptNo("RCPT-original");
+        authenticate(owner);
+        when(paymentRepository.findByTenant_IdAndIdempotencyKey(7, "refund-cancelled"))
+                .thenReturn(Optional.empty());
+        when(paymentRepository.findByIdAndTenantId(10L, 7)).thenReturn(Optional.of(original));
+        when(invoiceRepository.findByIdAndTenantIdForUpdate(4L, 7L)).thenReturn(Optional.of(invoice));
+        when(paymentRepository.findByIdAndTenantIdForUpdate(10L, 7)).thenReturn(Optional.of(original));
+        when(paymentRepository.sumRefundsForPayment(10L, 7)).thenReturn(BigDecimal.ZERO);
+        when(paymentRepository.save(any(PaymentRecord.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.refundPayment(10L, refundRequest("20.00", "refund-cancelled"));
+
+        assertEquals(new BigDecimal("30.00"), invoice.getPaidAmount());
+        assertEquals(Invoice.InvoiceStatus.CANCELLED, invoice.getStatus());
+        assertEquals(Invoice.PaymentStatus.CANCELLED, invoice.getPaymentStatus());
+        verify(invoiceRepository).save(invoice);
+        verify(customerProfileService).refreshLedgerForInvoice(invoice);
+    }
+
+    @Test
     void billingManagerCannotRefundPayments() {
         User manager = collector(7, "billing_manager");
         authenticate(manager);
@@ -290,6 +321,47 @@ class PaymentCollectionServiceTest {
         assertThrows(AccessDeniedException.class,
                 () -> service.refundPayment(10L, refundRequest("20.00", "refund-1")));
         verify(paymentRepository, never()).save(any(PaymentRecord.class));
+    }
+
+    @Test
+    void storeAdminCanLoadRefundableReceiptsOnlyForCancelledInvoiceAndPaidBalance() {
+        User owner = collector(7, "store_admin");
+        Invoice invoice = invoice(100, 50);
+        invoice.setStatus(Invoice.InvoiceStatus.CANCELLED);
+        PaymentReportRow payment = mock(PaymentReportRow.class);
+        when(payment.getPaymentId()).thenReturn(10L);
+        when(payment.getAmount()).thenReturn(new BigDecimal("80.00"));
+        when(payment.getRefundableAmount()).thenReturn(new BigDecimal("80.00"));
+        when(payment.getReceiptNo()).thenReturn("RCPT-original");
+        when(invoiceRepository.findByIdAndTenantId(4L, 7L)).thenReturn(Optional.of(invoice));
+        when(paymentRepository.findRefundableRowsForInvoice(7, 4L, "gst")).thenReturn(List.of(payment));
+        authenticate(owner);
+
+        List<Map<String, Object>> result =
+                service.getRefundablePaymentsForCancelledInvoice(4L, "GST");
+
+        assertEquals(1, result.size());
+        assertEquals(10L, result.get(0).get("paymentId"));
+        assertEquals(new BigDecimal("50.00"), result.get(0).get("refundableAmount"));
+        verify(paymentRepository).findRefundableRowsForInvoice(7, 4L, "gst");
+    }
+
+    @Test
+    void refundableReceiptLookupRejectsNonCancelledInvoiceAndBillingManager() {
+        User owner = collector(7, "store_admin");
+        Invoice invoice = invoice(100, 50);
+        when(invoiceRepository.findByIdAndTenantId(4L, 7L)).thenReturn(Optional.of(invoice));
+        authenticate(owner);
+
+        assertThrows(ResponseStatusException.class,
+                () -> service.getRefundablePaymentsForCancelledInvoice(4L, "gst"));
+        verify(paymentRepository, never()).findRefundableRowsForInvoice(7, 4L, "gst");
+
+        User manager = collector(7, "billing_manager");
+        authenticate(manager);
+        assertThrows(AccessDeniedException.class,
+                () -> service.getRefundablePaymentsForCancelledInvoice(4L, "gst"));
+        verify(invoiceRepository, org.mockito.Mockito.times(1)).findByIdAndTenantId(4L, 7L);
     }
 
     @Test

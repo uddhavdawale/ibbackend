@@ -44,6 +44,25 @@ public final class UserRolePolicy {
         return STORE_ADMIN_ROLES.contains(normalize(role));
     }
 
+    public static boolean canManageBilling(String role) {
+        String normalized = normalize(role);
+        return isStoreAdmin(normalized)
+                || isSystemAdmin(normalized)
+                || "retailer".equals(normalized)
+                || "owner".equals(normalized)
+                || "shop_owner".equals(normalized)
+                || "shop owner".equals(normalized)
+                || "retailer_owner".equals(normalized)
+                || "retailer_shop_owner".equals(normalized)
+                || "system administrator".equals(normalized)
+                || "sys_admin".equals(normalized)
+                || "platform_admin".equals(normalized)
+                || "platform_administrator".equals(normalized)
+                || "enterprise_admin".equals(normalized)
+                || "admin".equals(normalized)
+                || "billing_manager".equals(normalized);
+    }
+
     public static boolean isSystemAdmin(String role) {
         return SYSTEM_ADMIN_ROLES.contains(normalize(role));
     }

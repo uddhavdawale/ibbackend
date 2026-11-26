@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -82,6 +83,46 @@ public interface PaymentRecordRepository extends JpaRepository<PaymentRecord, Lo
             @Param("method") String method,
             @Param("invoiceId") Long invoiceId,
             Pageable pageable);
+
+    @Query(value = """
+            SELECT p.id AS paymentId,
+                   CASE WHEN p.invoice_id IS NOT NULL THEN p.invoice_id ELSE p.non_gst_invoice_id END AS invoiceId,
+                   CASE WHEN p.invoice_id IS NOT NULL THEN i.invoice_no ELSE ngi.invoice_no END AS invoiceNo,
+                   CASE WHEN p.invoice_id IS NOT NULL THEN i.customer_name ELSE ngi.customer_name END AS customerName,
+                   p.amount AS amount,
+                   GREATEST(p.amount - COALESCE((
+                       SELECT SUM(r.amount) FROM payment_records r
+                       WHERE r.reversal_of_payment_id = p.id AND r.tenant_id = p.tenant_id
+                         AND r.source = 'REFUND'
+                   ), 0), 0) AS refundableAmount,
+                   p.method AS method,
+                   p.status AS status,
+                   p.receipt_no AS receiptNo,
+                   p.reference_no AS referenceNo,
+                   COALESCE(u.owner_name, u.username, u.email) AS collectorName,
+                   p.collector_user_id AS collectorId,
+                   p.source AS source,
+                   p.collected_at AS collectedAt
+            FROM payment_records p
+            LEFT JOIN invoices i ON i.id = p.invoice_id AND i.tenant_id = p.tenant_id
+            LEFT JOIN non_gst_invoices ngi ON ngi.id = p.non_gst_invoice_id AND ngi.tenant_id = p.tenant_id
+            LEFT JOIN users u ON u.id = p.collector_user_id AND u.tenant_id = p.tenant_id
+            WHERE p.tenant_id = :tenantId
+              AND p.status = 'RECEIVED'
+              AND p.source <> 'REFUND'
+              AND ((:billType = 'gst' AND p.invoice_id = :invoiceId)
+                   OR (:billType = 'non-gst' AND p.non_gst_invoice_id = :invoiceId))
+              AND GREATEST(p.amount - COALESCE((
+                  SELECT SUM(r.amount) FROM payment_records r
+                  WHERE r.reversal_of_payment_id = p.id AND r.tenant_id = p.tenant_id
+                    AND r.source = 'REFUND'
+              ), 0), 0) > 0
+            ORDER BY p.collected_at DESC, p.id DESC
+            """, nativeQuery = true)
+    List<PaymentReportRow> findRefundableRowsForInvoice(
+            @Param("tenantId") Integer tenantId,
+            @Param("invoiceId") Long invoiceId,
+            @Param("billType") String billType);
 
     @Query(value = """
             SELECT COALESCE(SUM(CASE WHEN source = 'REFUND' THEN -amount ELSE amount END), 0),

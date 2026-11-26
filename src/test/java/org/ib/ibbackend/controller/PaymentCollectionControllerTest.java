@@ -72,4 +72,20 @@ class PaymentCollectionControllerTest {
         verify(paymentCollectionService).getReport(
                 today, today, null, null, null, 0, 20);
     }
+
+    @Test
+    void refundablePaymentsEndpointRequiresTenantAndDelegatesInvoiceType() throws Exception {
+        TenantContext.setCurrentTenant(7L);
+        when(paymentCollectionService.getRefundablePaymentsForCancelledInvoice(41L, "non-gst"))
+                .thenReturn(List.of(Map.of("paymentId", 15L, "refundableAmount", 25.00)));
+
+        mockMvc.perform(get("/api/payments/refundable")
+                        .param("invoiceId", "41")
+                        .param("billType", "non-gst"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].paymentId").value(15))
+                .andExpect(jsonPath("$[0].refundableAmount").value(25.00));
+
+        verify(paymentCollectionService).getRefundablePaymentsForCancelledInvoice(41L, "non-gst");
+    }
 }

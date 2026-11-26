@@ -17,4 +17,14 @@ public interface ReturnOrderRepository extends JpaRepository<ReturnOrder, Long> 
 
     @Query("SELECT r FROM ReturnOrder r WHERE r.id = :id AND r.tenant.id = :tenantId")
     Optional<ReturnOrder> findByIdAndTenantId(@Param("id") Long id, @Param("tenantId") Long tenantId);
+
+    boolean existsByTenant_IdAndBillTypeAndInvoiceId(Long tenantId, String billType, Long invoiceId);
+
+    @Query("SELECT item.productId, SUM(item.quantity) FROM ReturnOrderItem item " +
+            "WHERE item.returnOrder.invoiceId = :invoiceId " +
+            "AND item.returnOrder.tenant.id = :tenantId " +
+            "AND item.returnOrder.billType = :billType GROUP BY item.productId")
+    List<Object[]> findReturnedQuantityTotals(@Param("invoiceId") Long invoiceId,
+                                              @Param("tenantId") Long tenantId,
+                                              @Param("billType") String billType);
 }

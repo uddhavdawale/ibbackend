@@ -50,13 +50,15 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
             "WHERE FUNCTION('DATE', i.date) = CURRENT_DATE")
     BigDecimal getTodaySales();
 
-    @Query("SELECT COALESCE(SUM(i.grandTotal), 0) FROM Invoice i WHERE i.tenant.id = :tenantId AND FUNCTION('DATE', i.date) = CURRENT_DATE")
+    @Query("SELECT COALESCE(SUM(i.grandTotal), 0) FROM Invoice i WHERE i.tenant.id = :tenantId " +
+            "AND i.status <> 'CANCELLED' AND FUNCTION('DATE', i.date) = CURRENT_DATE")
     BigDecimal getTodaySalesByTenantId(@Param("tenantId") Long tenantId);
 
     @Query("SELECT COUNT(i) FROM Invoice i WHERE FUNCTION('DATE', i.date) = CURRENT_DATE")
     long countTodayInvoices();
 
-    @Query("SELECT COUNT(i) FROM Invoice i WHERE i.tenant.id = :tenantId AND FUNCTION('DATE', i.date) = CURRENT_DATE")
+    @Query("SELECT COUNT(i) FROM Invoice i WHERE i.tenant.id = :tenantId " +
+            "AND i.status <> 'CANCELLED' AND FUNCTION('DATE', i.date) = CURRENT_DATE")
     long countTodayInvoicesByTenantId(@Param("tenantId") Long tenantId);
 
     // Pending invoices count

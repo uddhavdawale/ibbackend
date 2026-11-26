@@ -34,6 +34,7 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -259,6 +260,54 @@ public class PaymentCollectionService {
         return result;
     }
 
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getRefundablePaymentsForCancelledInvoice(Long invoiceId, String billType) {
+        Integer tenantId = requireTenantId();
+        User actor = requireCollector(tenantId, false);
+        if (!canRefund(actor)) {
+            throw new AccessDeniedException("Payment refunds are not permitted");
+        }
+        if (invoiceId == null || invoiceId <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A valid invoice ID is required");
+        }
+
+        String normalizedBillType = normalizeRefundBillType(billType);
+        BigDecimal invoicePaidAmount;
+        if ("gst".equals(normalizedBillType)) {
+            Invoice invoice = invoiceRepository.findByIdAndTenantId(invoiceId, tenantId.longValue())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Invoice not found"));
+            if (invoice.getStatus() != Invoice.InvoiceStatus.CANCELLED) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Refunds from this flow require a cancelled invoice");
+            }
+            invoicePaidAmount = invoice.getPaidAmount();
+        } else {
+            NonGstInvoice invoice = nonGstInvoiceRepository.findByIdAndTenantId(invoiceId, tenantId.longValue())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Invoice not found"));
+            if (!"CANCELLED".equalsIgnoreCase(invoice.getStatus())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Refunds from this flow require a cancelled invoice");
+            }
+            invoicePaidAmount = invoice.getPaidAmount();
+        }
+
+        BigDecimal remainingInvoicePaid = invoicePaidAmount == null
+                ? ZERO : invoicePaidAmount.max(ZERO);
+        List<Map<String, Object>> refundablePayments = new ArrayList<>();
+        for (PaymentReportRow row : paymentRepository.findRefundableRowsForInvoice(
+                tenantId, invoiceId, normalizedBillType)) {
+            if (remainingInvoicePaid.signum() <= 0) break;
+            BigDecimal paymentRefundable = row.getRefundableAmount() == null
+                    ? ZERO : row.getRefundableAmount().max(ZERO);
+            BigDecimal available = paymentRefundable.min(remainingInvoicePaid);
+            if (available.signum() <= 0) continue;
+
+            Map<String, Object> paymentView = toPaymentView(row);
+            paymentView.put("refundableAmount", available);
+            refundablePayments.add(paymentView);
+            remainingInvoicePaid = remainingInvoicePaid.subtract(available);
+        }
+        return refundablePayments;
+    }
+
     @Transactional
     public Map<String, Object> reconcileCash(CashReconciliationRequest request) {
         if (request == null || request.getReconciliationDate() == null) {
@@ -460,6 +509,17 @@ public class PaymentCollectionService {
     private String normalizeOptionalMethod(String method) {
         if (method == null || method.isBlank() || "ALL".equalsIgnoreCase(method.trim())) return null;
         return normalizeMethod(method);
+    }
+
+    private String normalizeRefundBillType(String billType) {
+        if (billType == null || billType.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bill type is required");
+        }
+        return switch (billType.trim().toLowerCase(Locale.ROOT)) {
+            case "gst" -> "gst";
+            case "non-gst", "non gst", "non_gst" -> "non-gst";
+            default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported bill type");
+        };
     }
 
     private void ensureInvoiceCollectible(boolean cancelled) {
