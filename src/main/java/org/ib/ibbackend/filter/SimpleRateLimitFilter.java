@@ -31,7 +31,8 @@ public class SimpleRateLimitFilter extends OncePerRequestFilter {
             "/api/mfa/verify",
             "/api/auth/password/forgot",
             "/api/auth/password/reset",
-            "/api/contact"
+            "/api/contact",
+            "/api/integrations/whatsapp"
     );
     private static final Set<String> EXPORT_PATH_PREFIXES = Set.of(
             "/api/dashboard",
@@ -73,6 +74,7 @@ public class SimpleRateLimitFilter extends OncePerRequestFilter {
     private int limitForPath(String path) {
         return switch (path) {
             case "/api/auth/password/forgot", "/api/contact" -> 5;
+            case "/api/integrations/whatsapp" -> 10;
             case "/api/auth/password/reset", "/api/mfa/send", "/api/mfa/cancel", "/api/mfa/verify" -> 10;
             case "/api/login", "/login", "/api/auth/login" -> 15;
             default -> MAX_REQUESTS_PER_WINDOW;

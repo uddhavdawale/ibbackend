@@ -64,6 +64,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/contact-us", "/contact-us.html").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/contact").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/webhooks/whatsapp").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/whatsapp").permitAll()
                         .requestMatchers(
                                 "/api/login",
                                 "/login",
